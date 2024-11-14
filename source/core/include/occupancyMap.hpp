@@ -28,6 +28,7 @@
 
 #include <tbb/parallel_reduce.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/concurrent_vector.h>
 
 #include <tsl/robin_set.h>
 
