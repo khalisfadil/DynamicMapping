@@ -24,12 +24,10 @@
 // Constructor
 OccupancyMap::OccupancyMap(double mapRes,
                             double reachingDistance,
-                            Eigen::Vector3d mapCenter,
-                            uint32_t decayFactor)
+                            Eigen::Vector3d mapCenter)
     : mapRes_(mapRes), 
       reachingDistance_(reachingDistance),
-      mapCenter_(mapCenter),
-      decayFactor_(decayFactor)
+      mapCenter_(mapCenter)
 {}
 //##############################################################################
 // Main Pipeline
@@ -58,7 +56,6 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3d>& p
         markDynamicVoxels(dynamicCloud);
     }
 }
-
 //##############################################################################
 // Function to update the vehicle position
 void OccupancyMap::updateVehiclePosition(const Eigen::Vector3d& newPosition) {
@@ -187,7 +184,6 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3d>& pointClo
         insertedVoxels_[gridIndex] = voxel;
     }
 }
-
 //##############################################################################
 // Perform raycast to remove voxel
 std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end) {
@@ -198,16 +194,13 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3d&
     if ((end - start).squaredNorm() < closeThreshold * closeThreshold) {
         return { posToGridIndex(start) };
     }
-
     // Precompute values for the loop to avoid recalculating in each iteration
     Eigen::Vector3d direction = (end - start).normalized();
     double distance = (end - start).norm();
-
     // Initialize voxel collection
     tsl::robin_set<Eigen::Vector3i, Vector3iHash, Vector3iEqual> uniqueVoxels;
     Eigen::Vector3i lastVoxelIndex = posToGridIndex(start);
     uniqueVoxels.insert(lastVoxelIndex);
-
     // Use a single position variable and avoid unnecessary recalculations in each step
     Eigen::Vector3d currentPos = start;
     for (double step = mapRes_; step < distance; step += mapRes_) {
@@ -220,7 +213,6 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3d&
             lastVoxelIndex = voxelIndex;
         }
     }
-
     // Return unique voxels as a vector
     return std::vector<Eigen::Vector3i>(uniqueVoxels.begin(), uniqueVoxels.end());
 }

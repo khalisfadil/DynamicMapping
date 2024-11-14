@@ -32,7 +32,7 @@
 
 #include <tsl/robin_set.h>
 
-constexpr int maxPointsPerVoxel_ = 255;
+constexpr int maxPointsPerVoxel_ = 20;
 
 class OccupancyMap {
     public:
@@ -74,8 +74,7 @@ class OccupancyMap {
         // Constructor with one-time parameters
         OccupancyMap(double mapRes,
                         double reachingDistance,
-                        Eigen::Vector3d mapCenter, // [0,0,0]
-                        uint32_t decayFactor);
+                        Eigen::Vector3d mapCenter);
         //##############################################################################
         // Main Pipeline runOccupancyMapPipeline
         void runOccupancyMapPipeline(const std::vector<Eigen::Vector3d>& pointCloud,
@@ -106,8 +105,6 @@ class OccupancyMap {
         double mapRes_;
         Eigen::Vector3d mapCenter_;
         double reachingDistance_;
-        uint32_t decayFactor_;
-
         Eigen::Vector3d vehiclePosition_;
         uint32_t currentFrame_;
         //##############################################################################

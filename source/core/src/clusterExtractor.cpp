@@ -417,7 +417,8 @@ void ClusterExtractor::updatePrevClusterMap() {
     // Step 5: Push the updated map for the current frame to the back of the deque
     prevClusterMap_.push_back(std::move(currentFrameMap));
 }
-
+//##############################################################################
+// Function to initializePrevClusterMap
 void ClusterExtractor::initializePrevClusterMap() {
     // Check if the deque has reached the maximum size (5 frames)
     if (prevClusterMap_.size() == 5) {
