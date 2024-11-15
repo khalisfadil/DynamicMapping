@@ -26,64 +26,36 @@ static OccupancyMap* occupancyMapInstance = nullptr;
 static ClusterExtractor* clusterExtractorInstance = nullptr;
 
 // Initialize resources for dynamic mapping with specified parameters
-void CreateDynamicMapping(double mapRes, 
-                            double reachingDistance,
-                            double* mapCenter,
-                            double clusterTolerance,
-                            int minClusterSize,
-                            int maxClusterSize,
-                            double staticThreshold,
-                            double dynamicScoreThreshold,
-                            double densityThreshold,
-                            double velocityThreshold,
-                            double similarityThreshold,
-                            double maxDistanceThreshold,
-                            double dt) {
-
-    // Convert mapCenter array to Eigen::Vector3d
-    Eigen::Vector3d mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
-
-    // Initialize the OccupancyMap instance
-    if (!occupancyMapInstance) {
-        occupancyMapInstance = new OccupancyMap(mapRes, reachingDistance, mapCenterVec);
-    }
-
-    // Initialize the ClusterExtractor instance if needed
-    if (!clusterExtractorInstance) {
-        clusterExtractorInstance = new ClusterExtractor(clusterTolerance, minClusterSize, maxClusterSize,
-                                                        staticThreshold, dynamicScoreThreshold, densityThreshold,
-                                                        velocityThreshold, similarityThreshold, maxDistanceThreshold, dt);
-    }
-}
+void CreateDynamicMapping() {}
 
 // Main function for dynamic mapping
-void OutputDynamicMapping(uint32_t numInputCloud,
-                          float* inputCloud, 
-                          float* reflectivity,
-                          float* intensity,
-                          float* NIR,
-                          double* vehiclePosition,
-                          uint32_t currFrame,
-                          double mapRes, 
-                          double reachingDistance,
-                          double* mapCenter,
-                          double clusterTolerance,
-                          int minClusterSize,
-                          int maxClusterSize,
-                          double staticThreshold,
-                          double dynamicScoreThreshold,
-                          double densityThreshold,
-                          double velocityThreshold,
-                          double similarityThreshold,
-                          double maxDistanceThreshold,
-                          double dt,
-                          double* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,  // Pass size by reference to update
-                          double* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,  // Same here for dynamic size
-                          int* outputStaticOccupancyColors,
-                          int* outputStaticReflectivityColors,
-                          int* outputStaticIntensityColors,
-                          int* outputStaticNIRColors,
-                          int* outputDynamicColors) {
+void OutputDynamicMapping(uint32_t numInputCloud,               //u1
+                          float* inputCloud,                    //u2
+                          float* reflectivity,                  //u3
+                          float* intensity,                     //u4
+                          float* NIR,                           //u5
+                          double* vehiclePosition,              //u6
+                          uint32_t currFrame,                   //u7
+                          double mapRes,                        //u8
+                          double reachingDistance,              //u9
+                          double* mapCenter,                    //u10
+                          double clusterTolerance,              //u11
+                          int minClusterSize,                   //u12
+                          int maxClusterSize,                   //u13
+                          double staticThreshold,               //u14
+                          double dynamicScoreThreshold,         //u15
+                          double densityThreshold,              //u16
+                          double velocityThreshold,             //u17
+                          double similarityThreshold,           //u18
+                          double maxDistanceThreshold,          //u19
+                          double dt,                            //u20
+                          double* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,       //y1 y2
+                          double* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,     //y3 y4
+                          int* outputStaticOccupancyColors,                                 //y5
+                          int* outputStaticReflectivityColors,                              //y6
+                          int* outputStaticIntensityColors,                                 //y7
+                          int* outputStaticNIRColors,                                       //y8
+                          int* outputDynamicColors) {                                       //y9
 
     // Constants for max occupancy sizes
     const uint32_t staticOccupancyMaxSize = 128 * 1024 * 10;
@@ -102,21 +74,18 @@ void OutputDynamicMapping(uint32_t numInputCloud,
     staticVoxelVecSize = 0;
     dynamicVoxelVecSize = 0;
 
+    Eigen::Vector3d mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
+    Eigen::Vector3d vehiclePos(vehiclePosition[0], vehiclePosition[1], vehiclePosition[2]);
+
     if (!occupancyMapInstance || !clusterExtractorInstance) {
         // Initialize if instances are null
-        CreateDynamicMapping(mapRes, 
-                                reachingDistance,
-                                mapCenter,
-                                clusterTolerance,
-                                minClusterSize,
-                                maxClusterSize,
-                                staticThreshold,
-                                dynamicScoreThreshold,
-                                densityThreshold,
-                                velocityThreshold,
-                                similarityThreshold,
-                                maxDistanceThreshold,
-                                dt);
+        occupancyMapInstance = new OccupancyMap(mapRes, reachingDistance, mapCenterVec);
+
+
+        clusterExtractorInstance = new ClusterExtractor(clusterTolerance, minClusterSize, maxClusterSize,
+                                                            staticThreshold, dynamicScoreThreshold, densityThreshold,
+                                                            velocityThreshold, similarityThreshold, maxDistanceThreshold, dt);
+        
     }
 
     // Pre-size vectors to avoid resizing during parallel processing
@@ -141,9 +110,6 @@ void OutputDynamicMapping(uint32_t numInputCloud,
         std::cerr << "pointCloud is empty. Exiting processing." << std::endl;
         return;
     }
-
-    Eigen::Vector3d mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
-    Eigen::Vector3d vehiclePos(vehiclePosition[0], vehiclePosition[1], vehiclePosition[2]);
 
     // Run clustering and dynamic mapping
     clusterExtractorInstance->runClusterExtractorPipeline(pointCloud, reflectivityVec, intensityVec, NIRVec);

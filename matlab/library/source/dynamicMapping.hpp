@@ -21,27 +21,12 @@
 // SOFTWARE.
 #pragma once
 
-#include <cstdint>
-#include <vector>
+#include "M_occupancyMap.hpp"
+#include "M_clusterExtractor.hpp"
 
-#include "occupancyMap.hpp"
-#include "clusterExtractor.hpp"
+extern void CreateDynamicMapping();
 
-extern void CreateDynamicMapping(double mapRes, 
-                                    double reachingDistance,
-                                    double* mapCenter,
-                                    double clusterTolerance,
-                                    int minClusterSize,
-                                    int maxClusterSize,
-                                    double staticThreshold,
-                                    double dynamicScoreThreshold,
-                                    double densityThreshold,
-                                    double velocityThreshold,
-                                    double similarityThreshold,
-                                    double maxDistanceThreshold,
-                                    double dt);
-
-extern void DeleteDynamicMapping(uint32_t numInputCloud,
+extern void OutputDynamicMapping(uint32_t numInputCloud,
                                     float* inputCloud, 
                                     float* reflectivity,
                                     float* intensity,
@@ -69,4 +54,4 @@ extern void DeleteDynamicMapping(uint32_t numInputCloud,
                                     int* outputStaticNIRColors,
                                     int* outputDynamicColors);
 
-extern void OutputDynamicMapping();
+extern void DeleteDynamicMapping();

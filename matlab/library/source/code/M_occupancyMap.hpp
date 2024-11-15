@@ -21,7 +21,7 @@
 // SOFTWARE.
 #pragma once
 
-#include "clusterExtractor.hpp"
+#include "M_clusterExtractor.hpp"
 
 constexpr int maxPointsPerVoxel_ = 20;
 
@@ -56,7 +56,7 @@ class OccupancyMap {
             float avgNIR = 0.0f;
             uint32_t lastSeenFrame = 0;       // Last frame this voxel was updated
             bool isDynamic = false;       // Flag indicating dynamic status
-            RemovalReason removalReason = RemovalReason::None;  // Reason for voxel removal
+            mutable RemovalReason removalReason = RemovalReason::None;  // Reason for voxel removal
             VoxelData() {
                 points.reserve(maxPointsPerVoxel_);  // Reserve capacity for MAX_POINTS_PER_VOXEL
             }
