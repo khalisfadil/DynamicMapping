@@ -80,7 +80,6 @@ public:
         bool isDynamic = false;
         double dynamicScore = 0.0;                          // Overall dynamic confidence score
         double velocityConsistencyScore = 0.0;              // Score from EKF velocity prediction consistency
-        std::unique_ptr<EKFVelocity2D> ekf = nullptr;       // EKF instance for 2D velocity tracking
     };
     //##############################################################################
     // Main Pipeline
@@ -112,9 +111,12 @@ private:
     double dt_;
     int newClusterID;
 
-     //##############################################################################
+    //##############################################################################
     // Persistent previous clusters
     std::deque<tsl::robin_map<int, ClusterProperties>> prevClusterMap_;
+    //##############################################################################
+    // Persistent ekf clusters
+    tsl::robin_map<int, std::unique_ptr<EKFVelocity2D>> ekfInstances_;
     //##############################################################################
     // Stored current extracted clusters of points
     std::vector<std::vector<PointWithAttributes>> clusters_;
@@ -144,9 +146,6 @@ private:
     //##############################################################################
     // Function to associate clusters across frames
     void associateClusters();
-    //##############################################################################
-    // Function to initializeEKFForClusters
-    void initializeEKFForClusters();
     //##############################################################################
     // Function to updateEKFForClusters
     void updateEKFForClusters();

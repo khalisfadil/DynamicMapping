@@ -69,7 +69,6 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
     }
 
     // Step 4: Process clusters with EKF if associations are present
-    initializeEKFForClusters();
     updateEKFForClusters();
     evaluateClusterDynamics();
 
@@ -142,6 +141,12 @@ void ClusterExtractor::calculateClusterProperties() {
     tbb::parallel_for(tbb::blocked_range<uint64_t>(0, clusters_.size()), [&](const tbb::blocked_range<uint64_t>& range) {
         for (uint64_t i = range.begin(); i < range.end(); ++i) {
             const auto& cluster = clusters_[i];
+
+            // Check for empty clusters
+            if (cluster.empty()) {
+                continue;
+            }
+
             ClusterProperties properties;
 
             properties.data = cluster; // include all point inside the properties.
@@ -193,7 +198,6 @@ void ClusterExtractor::calculateClusterProperties() {
         }
     });
 }
-
 //##############################################################################
 // Function to calculate bounding box overlap score
 double ClusterExtractor::calculateBoundingBoxScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
@@ -205,32 +209,49 @@ double ClusterExtractor::calculateBoundingBoxScore(const ClusterProperties& clus
     double minVolume = std::min((clusterA.boundingBoxMax - clusterA.boundingBoxMin).prod(),
                                 (clusterB.boundingBoxMax - clusterB.boundingBoxMin).prod());
 
-    return minVolume > 0 ? overlapVolume / minVolume : 0;
+    // Return normalized overlap volume if minVolume > 0, else return 0
+    return (minVolume > 0) ? (overlapVolume / minVolume) : 0.0;
 }
 //##############################################################################
 // Function to calculate similarity score based on position, bounding box, etc.
 double ClusterExtractor::calculateSimilarityScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
     double score = 0.0;
 
+    // Weights for each component
+    const double distanceWeight = 0.4;
+    const double bboxWeight = 0.3;
+    const double reflectivityWeight = 0.1;
+    const double intensityWeight = 0.1;
+    const double nirWeight = 0.1;
+
+    // Centroid distance similarity
     double distance = (clusterA.centroid - clusterB.centroid).norm();
-    score += std::exp(-distance);
+    score += distanceWeight * std::exp(-distance);
 
-    score += calculateBoundingBoxScore(clusterA, clusterB);
+    // Bounding box similarity
+    score += bboxWeight * calculateBoundingBoxScore(clusterA, clusterB);
 
+    // Reflectivity similarity
     double reflectivityDifference = std::abs(clusterA.avgReflectivity - clusterB.avgReflectivity);
-    score += std::exp(-reflectivityDifference);
+    score += reflectivityWeight * std::exp(-reflectivityDifference);
 
+    // Intensity similarity
     double intensityDifference = std::abs(clusterA.avgIntensity - clusterB.avgIntensity);
-    score += std::exp(-intensityDifference);
+    score += intensityWeight * std::exp(-intensityDifference);
 
+    // NIR similarity
     double NIRDifference = std::abs(clusterA.avgNIR - clusterB.avgNIR);
-    score += std::exp(-NIRDifference);
+    score += nirWeight * std::exp(-NIRDifference);
 
     return score;
 }
 //##############################################################################
 // Function to associate clusters across frames
 void ClusterExtractor::associateClusters() {
+    if (propertiesList_.empty() || prevClusterMap_.empty()) {
+        return;  // No clusters to associate
+    }
+
     tbb::concurrent_bounded_queue<std::tuple<double, int, int>> scoreQueue;
 
     // Clear persistent associations for the current frame
@@ -293,43 +314,35 @@ void ClusterExtractor::associateClusters() {
     }
 }
 //##############################################################################
-// EKF initializer function
-void ClusterExtractor::initializeEKFForClusters() {
-    // Check if persistentAssociations_ has any associations to work with
-    if (!persistentAssociations_.empty()) {
-        // Iterate over each association in the previous frame's associations
-        for (const auto& [prevClusterPtr, currClusterPtr, frameDiff] : persistentAssociations_) {
-            // Initialize EKF for the previous frame cluster if uninitialized
-            if (prevClusterPtr && !prevClusterPtr->ekf) {
-                prevClusterPtr->ekf = std::make_unique<EKFVelocity2D>(prevClusterPtr->centroid.head<2>());
-            }
-        }
-    }
-}
-//##############################################################################
 // EKF update function
 void ClusterExtractor::updateEKFForClusters() {
     // Iterate over each association in persistentAssociations_
     for (auto& [prevClusterPtr, currClusterPtr, frameDiff] : persistentAssociations_) {
-        // Ensure both previous and current clusters are valid and EKF is initialized in the previous cluster
-        if (prevClusterPtr && currClusterPtr && prevClusterPtr->ekf) {
-            // Calculate the effective dt as frameDiff * dt_
-            double effectiveDt = frameDiff * dt_;
+        // Ensure both previous and current clusters are valid
+        if (prevClusterPtr && currClusterPtr) {
+            int clusterID = prevClusterPtr->clusterID;  // Retrieve cluster ID
+            double effectiveDt = frameDiff * dt_;      // Calculate effective dt
 
-            // Copy the EKF from the previous cluster to the current cluster
-            currClusterPtr->ekf = prevClusterPtr->ekf->clone();
+            // Check if an EKF instance exists for this clusterID, or create one if it doesn't
+            auto it = ekfInstances_.find(clusterID);
+            if (it == ekfInstances_.end()) {
+                it = ekfInstances_.emplace(clusterID, std::make_unique<EKFVelocity2D>(prevClusterPtr->centroid.head<2>())).first;
+            }
+
+            // Retrieve a mutable reference to the EKF instance via the unique_ptr
+            auto& ekf = *(it->second);
 
             // Perform the predict step with the calculated dt
-            currClusterPtr->ekf->predict(effectiveDt);
+            ekf.predict(effectiveDt);
 
             // Prepare the position measurement from the current cluster's centroid [x, y]
             Eigen::Vector2d positionMeasurement = currClusterPtr->centroid.head<2>();
 
             // Perform the update step with the current position measurement
-            currClusterPtr->ekf->update(positionMeasurement);
+            ekf.update(positionMeasurement);
 
-            // Assign the 2D predicted velocity to the 3D velocity in ClusterProperties
-            Eigen::Vector2d predictedVelocity2D = currClusterPtr->ekf->getPredictedVelocity();
+            // Assign the updated EKF state back to the current cluster's velocity
+            Eigen::Vector2d predictedVelocity2D = ekf.getPredictedVelocity();
             currClusterPtr->velocity << predictedVelocity2D.x(), predictedVelocity2D.y(), 0.0;
         }
     }
@@ -339,46 +352,63 @@ void ClusterExtractor::updateEKFForClusters() {
 void ClusterExtractor::evaluateClusterDynamics() {
     // Iterate over each association in persistentAssociations_
     for (auto& [prevClusterPtr, currClusterPtr, frameDiff] : persistentAssociations_) {
-        // Ensure both previous and current clusters are valid and that the current cluster has an EKF
-        if (prevClusterPtr && currClusterPtr && currClusterPtr->ekf) {
-            
-            // Step 1: Check detected velocity from EKF to detect significant movement
-            double detectedSpeed = currClusterPtr->ekf->getPredictedVelocity().norm();
-            if (detectedSpeed > 1.5) {
-                currClusterPtr->dynamicScore = 1.0;  // Full confidence in dynamic behavior
-                currClusterPtr->isDynamic = true;
-                continue;  // Skip further checks for this cluster
+        // Ensure both previous and current clusters are valid
+        if (prevClusterPtr && currClusterPtr) {
+            int clusterID = currClusterPtr->clusterID;  // Retrieve the current cluster ID
+
+            // Check if an EKF instance exists for this clusterID
+            auto it = ekfInstances_.find(clusterID);
+            if (it != ekfInstances_.end()) {
+                // Retrieve a mutable reference to the EKF instance via the unique_ptr
+                auto& ekf = *(it->second);
+
+                // Step 1: Check detected velocity from EKF to detect significant movement
+                double detectedSpeed = ekf.getPredictedVelocity().norm();
+                if (detectedSpeed > 1.5) {
+                    currClusterPtr->dynamicScore = 1.0;  // Full confidence in dynamic behavior
+                    currClusterPtr->isDynamic = true;
+                    continue;  // Skip further checks for this cluster
+                }
+
+                // Step 2: Calculate dynamic score based on centroid, bounding box, density, velocity consistency, and previous dynamic state
+
+                // 1. Centroid movement score (high if centroids are far apart)
+                double distance = (currClusterPtr->centroid - prevClusterPtr->centroid).norm();
+                double centroidScore = 1.0 - std::exp(-distance / staticThreshold_);
+
+                // 2. Bounding box consistency score (high if bounding boxes are inconsistent)
+                double boundingBoxScore = 1.0 - calculateBoundingBoxScore(*currClusterPtr, *prevClusterPtr);
+
+                // 3. Density change score (high if density changes significantly)
+                double densityChange = std::abs(currClusterPtr->density - prevClusterPtr->density);
+                double densityScore = 1.0 - std::exp(-densityChange / densityThreshold_);
+
+                // 4. Velocity consistency score from EKF
+                double velocityError = ekf.getStateVelocityError();
+                currClusterPtr->velocityConsistencyScore = 1.0 - std::exp(-velocityError / velocityThreshold_);
+
+                // 5. Previous dynamic state contribution
+                double prevDynamicScore = prevClusterPtr->dynamicScore; // Confidence score from the previous cluster
+                double prevDynamicWeight = 0.2; // Adjust this weight as necessary
+
+                // Calculate the final dynamic score, weighted by each factor
+                currClusterPtr->dynamicScore = (centroidScore * 0.25 +
+                                                boundingBoxScore * 0.2 +
+                                                densityScore * 0.1 +
+                                                currClusterPtr->velocityConsistencyScore * 0.25 +
+                                                prevDynamicScore * prevDynamicWeight);
+
+                // Set isDynamic based on dynamic score threshold
+                currClusterPtr->isDynamic = currClusterPtr->dynamicScore > dynamicScoreThreshold_;
+            } else {
+                // Default to dynamic if no EKF instance exists for this clusterID
+                currClusterPtr->isDynamic = false;
+                currClusterPtr->dynamicScore = 0.0;  // Full confidence in dynamic behavior
             }
-
-            // Step 2: Calculate dynamic score based on centroid, bounding box, density, and velocity consistency
-            
-            // 1. Centroid movement score (high if centroids are far apart)
-            double distance = (currClusterPtr->centroid - prevClusterPtr->centroid).norm();
-            double centroidScore = 1.0 - std::exp(-distance / staticThreshold_);
-
-            // 2. Bounding box consistency score (high if bounding boxes are inconsistent)
-            double boundingBoxScore = 1.0 - calculateBoundingBoxScore(*currClusterPtr, *prevClusterPtr);
-
-            // 3. Density change score (high if density changes significantly)
-            double densityChange = std::abs(currClusterPtr->density - prevClusterPtr->density);
-            double densityScore = 1.0 - std::exp(-densityChange / densityThreshold_);
-
-            // 4. Velocity consistency score from EKF
-            double velocityError = currClusterPtr->ekf->getStateVelocityError();
-            currClusterPtr->velocityConsistencyScore = 1.0 - std::exp(-velocityError / velocityThreshold_);
-
-            // Calculate the final dynamic score, weighted by each factor
-            currClusterPtr->dynamicScore = (centroidScore * 0.3 +
-                                            boundingBoxScore * 0.3 +
-                                            densityScore * 0.1 +
-                                            currClusterPtr->velocityConsistencyScore * 0.3);
-
-            // Set isDynamic based on dynamic score threshold
-            currClusterPtr->isDynamic = currClusterPtr->dynamicScore > dynamicScoreThreshold_;
         } else {
-            // Default to dynamic if previous cluster or EKF is missing
-            currClusterPtr->isDynamic = true;
-            currClusterPtr->dynamicScore = 1.0;  // Full confidence in dynamic behavior
+            // Default to dynamic if previous cluster is missing
+            currClusterPtr->isDynamic = false;
+            currClusterPtr->dynamicScore = 0.0;  // Full confidence in dynamic behavior
         }
     }
 }

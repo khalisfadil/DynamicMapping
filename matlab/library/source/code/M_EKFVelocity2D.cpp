@@ -22,7 +22,7 @@
 #include "M_EKFVelocity2D.hpp"
 
 //##############################################################################
-// EKFVelocity2D
+// EKFVelocity2D Constructor
 EKFVelocity2D::EKFVelocity2D(const Eigen::Vector2d& initialPosition) {
     // Initialize state vector with given position and zero velocity
     x_ << initialPosition(0), initialPosition(1), 0.0, 0.0;
@@ -31,7 +31,6 @@ EKFVelocity2D::EKFVelocity2D(const Eigen::Vector2d& initialPosition) {
     P_ = Eigen::Matrix4d::Identity();
     P_(2, 2) = 1000.0;  // High uncertainty in x velocity
     P_(3, 3) = 1000.0;  // High uncertainty in y velocity
-    // Position components (P_(0,0) and P_(1,1)) remain at 1, assuming more certainty about the initial position
 
     Q_ = Eigen::Matrix4d::Identity() * 0.1;  // Process noise
     R_ = Eigen::Matrix2d::Identity() * 0.1;  // Measurement noise
@@ -72,20 +71,23 @@ void EKFVelocity2D::update(const Eigen::Vector2d& positionMeasurement) {
     // Calculate the error as the norm of the difference between predicted and updated states
     stateVelocityError_ = (x_.segment<2>(2) - predictedState_.segment<2>(2)).norm();
 }
+
 //##############################################################################
 // getStateVelocityError
 double EKFVelocity2D::getStateVelocityError() const {
+    // `const` ensures this function doesn't modify the object state
     return stateVelocityError_;
 }
 //##############################################################################
 // getPredictedVelocity
 Eigen::Vector2d EKFVelocity2D::getPredictedVelocity() const {
-    // Return the velocity components [vx, vy] from the state vector x_
-    return x_.segment<2>(2);  // Extracts the 3rd and 4th elements (velocity in x and y directions)
+    // `const` ensures this function doesn't modify the object state
+    return x_.segment<2>(2);  // Extracts the velocity [vx, vy]
 }
 //##############################################################################
 // clone
 std::unique_ptr<EKFVelocity2D> EKFVelocity2D::clone() const {
+    // `const` ensures the clone function doesn't modify the object state
     auto newEKF = std::make_unique<EKFVelocity2D>(Eigen::Vector2d(x_[0], x_[1])); // Copy initial position
     newEKF->x_ = this->x_;      // Copy state
     newEKF->P_ = this->P_;      // Copy covariance
