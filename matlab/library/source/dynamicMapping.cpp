@@ -32,7 +32,7 @@ static std::unique_ptr<OccupancyMap> occupancyMapInstance = nullptr;
 static std::unique_ptr<ClusterExtractor> clusterExtractorInstance = nullptr;
 
 // Constants for max occupancy sizes
-constexpr uint32_t MAX_STATIC_OCCUPANCY = 128 * 1024 * 10;
+constexpr uint32_t MAX_STATIC_OCCUPANCY = 128 * 1024 * 5;
 constexpr uint32_t MAX_DYNAMIC_OCCUPANCY = 128 * 1024;
 
 // Initialize resources for dynamic mapping with specified parameters
