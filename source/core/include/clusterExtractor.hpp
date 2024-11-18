@@ -66,20 +66,37 @@ public:
     //##############################################################################
     // Structure to store properties of each cluster
     struct ClusterProperties {
-        int clusterID = -1; 
-        std::vector<PointWithAttributes> data;
-        Eigen::Vector3d centroid; 
-        Eigen::Vector3d boundingBoxMin; 
-        Eigen::Vector3d boundingBoxMax;
-        Eigen::Vector3d velocity; 
-        double density; 
-        float avgReflectivity; 
-        float avgIntensity;
-        float avgNIR; 
-        int pointCount; 
-        bool isDynamic = false;
-        double dynamicScore = 0.0;                          // Overall dynamic confidence score
-        double velocityConsistencyScore = 0.0;              // Score from EKF velocity prediction consistency
+        int clusterID = -1;                                 // Default invalid cluster ID
+        std::vector<PointWithAttributes> data;             // Data points in the cluster
+        Eigen::Vector3d centroid = Eigen::Vector3d::Zero();        // Default centroid at origin
+        Eigen::Vector3d boundingBoxMin = Eigen::Vector3d::Zero();  // Default bounding box min at origin
+        Eigen::Vector3d boundingBoxMax = Eigen::Vector3d::Zero();  // Default bounding box max at origin
+        Eigen::Vector3d velocity = Eigen::Vector3d::Zero();        // Default velocity at zero
+        double density = 0.0;                              // Default density
+        float avgReflectivity = 0.0f;                      // Default average reflectivity
+        float avgIntensity = 0.0f;                         // Default average intensity
+        float avgNIR = 0.0f;                               // Default average NIR
+        int pointCount = 0;                                // Default point count
+        bool isDynamic = false;                            // Default dynamic status
+        double dynamicScore = 0.0;                         // Default dynamic confidence score
+        double velocityConsistencyScore = 0.0;             // Default EKF velocity consistency score
+
+        // Optional constructor for explicit initialization
+        ClusterProperties()
+            : clusterID(-1),
+            data(),
+            centroid(Eigen::Vector3d::Zero()),
+            boundingBoxMin(Eigen::Vector3d::Zero()),
+            boundingBoxMax(Eigen::Vector3d::Zero()),
+            velocity(Eigen::Vector3d::Zero()),
+            density(0.0),
+            avgReflectivity(0.0f),
+            avgIntensity(0.0f),
+            avgNIR(0.0f),
+            pointCount(0),
+            isDynamic(false),
+            dynamicScore(0.0),
+            velocityConsistencyScore(0.0) {}
     };
     //##############################################################################
     // Main Pipeline

@@ -4,7 +4,7 @@
 %%   Simulink Coder TLC Code Generation file for SFunctionDynamicMapping
 %% 
 %% Simulink version      : 23.2 (R2023b) 01-Aug-2023
-%% TLC file generated on : 14-Nov-2024 17:29:21
+%% TLC file generated on : 18-Nov-2024 13:29:14
 
 /%
      %%%-MATLAB_Construction_Commands_Start
@@ -13,8 +13,8 @@
      def.OutputFcnSpec = 'void OutputDynamicMapping(uint32 u1, single u2[128*1024][3], single u3[128*1024][1],single u4[128*1024][1], single u5[128*1024][1],double u6[3][1], uint32 u7, double u8, double u9, double u10[3][1],double u11, int32 u12, int32 u13, double u14, double u15, double u16, double u17,double u18, double u19, double u20,double y1[128*1024*10][3], uint32 y2, double y3[128*1024][3], uint32 y4,int32 y5[128*1024*10][3], int32 y6[128*1024*10][3], int32 y7[128*1024*10][3],int32 y8[128*1024*10][3], int32 y9[128*1024][3])';
      def.StartFcnSpec = 'void CreateDynamicMapping()';
      def.TerminateFcnSpec = 'void DeleteDynamicMapping()';
-     def.HeaderFiles = {'dynamicMapping.hpp'};
-     def.SourceFiles = {'dynamicMapping.cpp'};
+     def.HeaderFiles = {'dynamicMapping.hpp', 'M_occupancyMap.hpp', 'M_clusterExtractor.hpp', 'M_EKFVelocity2D.hpp', 'robin_growth_policy.h', 'robin_hash.h', 'robin_map.h', 'robin_set.h'};
+     def.SourceFiles = {'dynamicMapping.cpp', 'M_occupancyMap.cpp', 'M_clusterExtractor.cpp', 'M_EKFVelocity2D.cpp'};
      def.IncPaths = {'/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code', '/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code/tsl'};
      def.SrcPaths = {'/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code', '/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code/tsl'};
      def.SampleTime = 'parameterized';
@@ -82,6 +82,13 @@
         #endif
 
         #include "dynamicMapping.hpp"
+        #include "M_occupancyMap.hpp"
+        #include "M_clusterExtractor.hpp"
+        #include "M_EKFVelocity2D.hpp"
+        #include "robin_growth_policy.h"
+        #include "robin_hash.h"
+        #include "robin_map.h"
+        #include "robin_set.h"
 
         %if IsModelReferenceSimTarget() && !::GenCPP
         extern "C" {
@@ -101,8 +108,18 @@
         %endif
     %else
         %<LibAddToCommonIncludes("dynamicMapping.hpp")>
+        %<LibAddToCommonIncludes("M_occupancyMap.hpp")>
+        %<LibAddToCommonIncludes("M_clusterExtractor.hpp")>
+        %<LibAddToCommonIncludes("M_EKFVelocity2D.hpp")>
+        %<LibAddToCommonIncludes("robin_growth_policy.h")>
+        %<LibAddToCommonIncludes("robin_hash.h")>
+        %<LibAddToCommonIncludes("robin_map.h")>
+        %<LibAddToCommonIncludes("robin_set.h")>
     %endif
     %<SLibAddToStaticSources("dynamicMapping.cpp")>
+    %<SLibAddToStaticSources("M_occupancyMap.cpp")>
+    %<SLibAddToStaticSources("M_clusterExtractor.cpp")>
+    %<SLibAddToStaticSources("M_EKFVelocity2D.cpp")>
 %endfunction
 
 %% Function: BlockInstanceSetup ===========================================
@@ -146,6 +163,13 @@
         #endif
 
         #include "dynamicMapping.hpp"
+        #include "M_occupancyMap.hpp"
+        #include "M_clusterExtractor.hpp"
+        #include "M_EKFVelocity2D.hpp"
+        #include "robin_growth_policy.h"
+        #include "robin_hash.h"
+        #include "robin_map.h"
+        #include "robin_set.h"
 
         %if IsModelReferenceSimTarget() && !::GenCPP
         extern "C" {

@@ -19,11 +19,21 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+
 #include "dynamicMapping.hpp"
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
 
 // Persistent pointers to manage the instances of OccupancyMap and ClusterExtractor
-static OccupancyMap* occupancyMapInstance = nullptr;
-static ClusterExtractor* clusterExtractorInstance = nullptr;
+static std::unique_ptr<OccupancyMap> occupancyMapInstance = nullptr;
+static std::unique_ptr<ClusterExtractor> clusterExtractorInstance = nullptr;
+
+// Constants for max occupancy sizes
+constexpr uint32_t MAX_STATIC_OCCUPANCY = 128 * 1024 * 10;
+constexpr uint32_t MAX_DYNAMIC_OCCUPANCY = 128 * 1024;
 
 // Initialize resources for dynamic mapping with specified parameters
 void CreateDynamicMapping() {}
@@ -57,18 +67,14 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
                           int* outputStaticNIRColors,                                       //y8
                           int* outputDynamicColors) {                                       //y9
 
-    // Constants for max occupancy sizes
-    const uint32_t staticOccupancyMaxSize = 128 * 1024 * 10;
-    const uint32_t dynamicOccupancyMaxSize = 128 * 1024;
-
     // Initialize output arrays
-    std::fill(outputStaticVoxelVec, outputStaticVoxelVec + staticOccupancyMaxSize * 3, std::numeric_limits<double>::quiet_NaN());
-    std::fill(outputDynamicVoxelVec, outputDynamicVoxelVec + dynamicOccupancyMaxSize * 3, std::numeric_limits<double>::quiet_NaN());
-    std::fill(outputStaticOccupancyColors, outputStaticOccupancyColors + staticOccupancyMaxSize * 3, -1);
-    std::fill(outputStaticReflectivityColors, outputStaticReflectivityColors + staticOccupancyMaxSize * 3, -1);
-    std::fill(outputStaticIntensityColors, outputStaticIntensityColors + staticOccupancyMaxSize * 3, -1);
-    std::fill(outputStaticNIRColors, outputStaticNIRColors + staticOccupancyMaxSize * 3, -1);
-    std::fill(outputDynamicColors, outputDynamicColors + dynamicOccupancyMaxSize * 3, -1);
+    std::fill(outputStaticVoxelVec, outputStaticVoxelVec + MAX_STATIC_OCCUPANCY * 3, std::numeric_limits<double>::quiet_NaN());
+    std::fill(outputDynamicVoxelVec, outputDynamicVoxelVec + MAX_DYNAMIC_OCCUPANCY * 3, std::numeric_limits<double>::quiet_NaN());
+    std::fill(outputStaticOccupancyColors, outputStaticOccupancyColors + MAX_STATIC_OCCUPANCY * 3, -1);
+    std::fill(outputStaticReflectivityColors, outputStaticReflectivityColors + MAX_STATIC_OCCUPANCY * 3, -1);
+    std::fill(outputStaticIntensityColors, outputStaticIntensityColors + MAX_STATIC_OCCUPANCY * 3, -1);
+    std::fill(outputStaticNIRColors, outputStaticNIRColors + MAX_STATIC_OCCUPANCY * 3, -1);
+    std::fill(outputDynamicColors, outputDynamicColors + MAX_DYNAMIC_OCCUPANCY * 3, -1);
 
     // Reset sizes
     staticVoxelVecSize = 0;
@@ -77,15 +83,16 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     Eigen::Vector3d mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
     Eigen::Vector3d vehiclePos(vehiclePosition[0], vehiclePosition[1], vehiclePosition[2]);
 
-    if (!occupancyMapInstance || !clusterExtractorInstance) {
-        // Initialize if instances are null
-        occupancyMapInstance = new OccupancyMap(mapRes, reachingDistance, mapCenterVec);
-
-
-        clusterExtractorInstance = new ClusterExtractor(clusterTolerance, minClusterSize, maxClusterSize,
-                                                            staticThreshold, dynamicScoreThreshold, densityThreshold,
-                                                            velocityThreshold, similarityThreshold, maxDistanceThreshold, dt);
-        
+    try {
+        if (!occupancyMapInstance || !clusterExtractorInstance) {
+            occupancyMapInstance = std::make_unique<OccupancyMap>(mapRes, reachingDistance, mapCenterVec);
+            clusterExtractorInstance = std::make_unique<ClusterExtractor>(clusterTolerance, minClusterSize, maxClusterSize,
+                                                                          staticThreshold, dynamicScoreThreshold, densityThreshold,
+                                                                          velocityThreshold, similarityThreshold, maxDistanceThreshold, dt);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] Exception during initialization: " << e.what() << std::endl;
+        return;
     }
 
     // Pre-size vectors to avoid resizing during parallel processing
@@ -98,7 +105,6 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     tbb::parallel_for(tbb::blocked_range<uint32_t>(0, numInputCloud),
         [&](const tbb::blocked_range<uint32_t>& range) {
             for (uint32_t i = range.begin(); i < range.end(); ++i) {
-                // Assign values to each vector at the index i
                 pointCloud[i] = Eigen::Vector3d(inputCloud[i * 3], inputCloud[i * 3 + 1], inputCloud[i * 3 + 2]);
                 reflectivityVec[i] = reflectivity[i];
                 intensityVec[i] = intensity[i];
@@ -107,7 +113,7 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
         });
 
     if (pointCloud.empty()) {
-        std::cerr << "pointCloud is empty. Exiting processing." << std::endl;
+        std::cerr << "[ERROR] PointCloud is empty. Exiting processing." << std::endl;
         return;
     }
 
@@ -121,31 +127,32 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     if (!staticVoxel.empty()) {
         auto voxelColors = occupancyMapInstance->computeVoxelColors(staticVoxel);
         std::vector<Eigen::Vector3d> staticVoxelVec = occupancyMapInstance->getVoxelCenters(staticVoxel);
-        staticVoxelVecSize = std::min(static_cast<uint32_t>(staticVoxelVec.size()), staticOccupancyMaxSize);
+        staticVoxelVecSize = std::min(static_cast<uint32_t>(staticVoxelVec.size()), MAX_STATIC_OCCUPANCY);
 
         const auto& occupancyColors = std::get<0>(voxelColors);
         const auto& reflectivityColors = std::get<1>(voxelColors);
         const auto& intensityColors = std::get<2>(voxelColors);
         const auto& NIRColors = std::get<3>(voxelColors);
 
+        // Fill output vectors for static voxels
         tbb::parallel_for(tbb::blocked_range<uint32_t>(0, staticVoxelVecSize),
             [&](const tbb::blocked_range<uint32_t>& range) {
                 for (uint32_t i = range.begin(); i < range.end(); ++i) {
                     outputStaticVoxelVec[i] = staticVoxelVec[i].x();
-                    outputStaticVoxelVec[i + staticOccupancyMaxSize] = staticVoxelVec[i].y();
-                    outputStaticVoxelVec[i + staticOccupancyMaxSize * 2] = staticVoxelVec[i].z();
+                    outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY] = staticVoxelVec[i].y();
+                    outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY * 2] = staticVoxelVec[i].z();
                     outputStaticOccupancyColors[i] = occupancyColors[i].x();
-                    outputStaticOccupancyColors[i + staticOccupancyMaxSize] = occupancyColors[i].y();
-                    outputStaticOccupancyColors[i + staticOccupancyMaxSize * 2] = occupancyColors[i].z();
+                    outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY] = occupancyColors[i].y();
+                    outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY * 2] = occupancyColors[i].z();
                     outputStaticReflectivityColors[i] = reflectivityColors[i].x();
-                    outputStaticReflectivityColors[i + staticOccupancyMaxSize] = reflectivityColors[i].y();
-                    outputStaticReflectivityColors[i + staticOccupancyMaxSize * 2] = reflectivityColors[i].z();
+                    outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY] = reflectivityColors[i].y();
+                    outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY * 2] = reflectivityColors[i].z();
                     outputStaticIntensityColors[i] = intensityColors[i].x();
-                    outputStaticIntensityColors[i + staticOccupancyMaxSize] = intensityColors[i].y();
-                    outputStaticIntensityColors[i + staticOccupancyMaxSize * 2] = intensityColors[i].z();
+                    outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY] = intensityColors[i].y();
+                    outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY * 2] = intensityColors[i].z();
                     outputStaticNIRColors[i] = NIRColors[i].x();
-                    outputStaticNIRColors[i + staticOccupancyMaxSize] = NIRColors[i].y();
-                    outputStaticNIRColors[i + staticOccupancyMaxSize * 2] = NIRColors[i].z();
+                    outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY] = NIRColors[i].y();
+                    outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY * 2] = NIRColors[i].z();
                 }
             });
     }
@@ -154,33 +161,26 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     std::vector<OccupancyMap::VoxelData> dynamicVoxel = occupancyMapInstance->getDynamicVoxels();
     if (!dynamicVoxel.empty()) {
         std::vector<Eigen::Vector3d> dynamicVoxelVec = occupancyMapInstance->getVoxelCenters(dynamicVoxel);
-        dynamicVoxelVecSize = std::min(static_cast<uint32_t>(dynamicVoxelVec.size()), dynamicOccupancyMaxSize);
+        dynamicVoxelVecSize = std::min(static_cast<uint32_t>(dynamicVoxelVec.size()), MAX_DYNAMIC_OCCUPANCY);
         std::vector<Eigen::Vector3i> dynamicVoxelColor = occupancyMapInstance->assignVoxelColorsRed(dynamicVoxel);
 
+        // Fill output vectors for dynamic voxels
         tbb::parallel_for(tbb::blocked_range<uint32_t>(0, dynamicVoxelVecSize),
             [&](const tbb::blocked_range<uint32_t>& range) {
                 for (uint32_t i = range.begin(); i < range.end(); ++i) {
                     outputDynamicVoxelVec[i] = dynamicVoxelVec[i].x();
-                    outputDynamicVoxelVec[i + dynamicOccupancyMaxSize] = dynamicVoxelVec[i].y();
-                    outputDynamicVoxelVec[i + dynamicOccupancyMaxSize * 2] = dynamicVoxelVec[i].z();
+                    outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelVec[i].y();
+                    outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelVec[i].z();
                     outputDynamicColors[i] = dynamicVoxelColor[i].x();
-                    outputDynamicColors[i + dynamicOccupancyMaxSize] = dynamicVoxelColor[i].y();
-                    outputDynamicColors[i + dynamicOccupancyMaxSize * 2] = dynamicVoxelColor[i].z();
+                    outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelColor[i].y();
+                    outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelColor[i].z();
                 }
             });
     }
 }
+
 // Clean up resources for dynamic mapping
 void DeleteDynamicMapping() {
-    // Delete dynamically allocated instances
-    if (occupancyMapInstance) {
-        delete occupancyMapInstance;
-        occupancyMapInstance = nullptr;  // Avoid dangling pointer
-    }
-
-    if (clusterExtractorInstance) {
-        delete clusterExtractorInstance;
-        clusterExtractorInstance = nullptr;  // Avoid dangling pointer
-    }
+    occupancyMapInstance.reset();  // Automatically deletes the instance
+    clusterExtractorInstance.reset();
 }
-

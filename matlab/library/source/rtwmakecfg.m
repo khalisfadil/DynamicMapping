@@ -2,7 +2,7 @@ function makeInfo = rtwmakecfg()
 %RTWMAKECFG adds include and source directories to the make files.
 %    makeInfo=
 %    Simulink version    : 23.2 (R2023b) 01-Aug-2023
-%    MATLAB file generated on : 14-Nov-2024 17:29:22
+%    MATLAB file generated on : 18-Nov-2024 13:29:15
 
 % Verify the Simulink version
 verify_simulink_version();
@@ -74,7 +74,7 @@ info(1:1) = struct(...
 info(1).SFunctionName = 'SFunctionDynamicMapping';
 info(1).IncPaths = {'/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code', '/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code/tsl'};
 info(1).SrcPaths = {'/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code', '/home/khalis/Workspace/SensorSOW/SynologyDrive/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/matlab/library/source/code/tsl'};
-info(1).SourceFiles = {'dynamicMapping.cpp'};
+info(1).SourceFiles = {'dynamicMapping.cpp', 'M_occupancyMap.cpp', 'M_clusterExtractor.cpp', 'M_EKFVelocity2D.cpp'};
 info(1).Language = 'C++';
 
 %% ------------------------------------------------------------------------

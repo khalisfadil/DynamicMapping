@@ -57,7 +57,19 @@ class OccupancyMap {
             uint32_t lastSeenFrame = 0;       // Last frame this voxel was updated
             bool isDynamic = false;       // Flag indicating dynamic status
             mutable RemovalReason removalReason = RemovalReason::None;  // Reason for voxel removal
-            VoxelData() {
+
+            // Default constructor initializes all members
+            VoxelData() 
+                : centerPosition(Eigen::Vector3d::Zero()),  // Initialize to (0, 0, 0)
+                totalReflectivity(0.0f),
+                totalIntensity(0.0f),
+                totalNIR(0.0f),
+                avgReflectivity(0.0f),
+                avgIntensity(0.0f),
+                avgNIR(0.0f),
+                lastSeenFrame(0),
+                isDynamic(false),
+                removalReason(RemovalReason::None) {
                 points.reserve(maxPointsPerVoxel_);  // Reserve capacity for MAX_POINTS_PER_VOXEL
             }
         };
