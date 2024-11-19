@@ -23,7 +23,7 @@
 //##############################################################################
 // Constructor
 OccupancyMap::OccupancyMap(double mapRes, double reachingDistance, Eigen::Vector3d mapCenter)
-    : mapRes_(mapRes), mapCenter_(mapCenter), reachingDistance_(reachingDistance) {
+    : mapRes_(mapRes), reachingDistance_(reachingDistance), mapCenter_(mapCenter)  {
     // constructor body
 }
 //##############################################################################

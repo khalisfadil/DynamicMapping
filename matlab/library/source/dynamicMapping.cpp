@@ -50,8 +50,8 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
                           double reachingDistance,              //u9
                           double* mapCenter,                    //u10
                           double clusterTolerance,              //u11
-                          int minClusterSize,                   //u12
-                          int maxClusterSize,                   //u13
+                          uint32_t minClusterSize,              //u12
+                          uint32_t maxClusterSize,              //u13
                           double staticThreshold,               //u14
                           double dynamicScoreThreshold,         //u15
                           double densityThreshold,              //u16

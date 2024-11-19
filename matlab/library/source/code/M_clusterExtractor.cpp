@@ -24,8 +24,8 @@
 //##############################################################################
 // Constructor
 ClusterExtractor::ClusterExtractor(double clusterTolerance,
-                                   int minClusterSize,
-                                   int maxClusterSize,
+                                   uint32_t minClusterSize,
+                                   uint32_t maxClusterSize,
                                    double staticThreshold,
                                    double dynamicScoreThreshold,
                                    double densityThreshold,
@@ -399,7 +399,7 @@ void ClusterExtractor::evaluateClusterDynamics() {
                                                 prevDynamicScore * prevDynamicWeight);
 
                 // Set isDynamic based on dynamic score threshold
-                currClusterPtr->isDynamic = currClusterPtr->dynamicScore > dynamicScoreThreshold_;
+                currClusterPtr->isDynamic = currClusterPtr->dynamicScore > 0.5;
             } else {
                 // Default to dynamic if no EKF instance exists for this clusterID
                 currClusterPtr->isDynamic = false;

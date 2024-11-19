@@ -106,8 +106,8 @@ class OccupancyMap {
         //##############################################################################
         // Persistent member variables (one-time defined parameters)
         double mapRes_;
-        Eigen::Vector3d mapCenter_;
         double reachingDistance_;
+        Eigen::Vector3d mapCenter_;
         Eigen::Vector3d vehiclePosition_;
         uint32_t currentFrame_;
         //##############################################################################

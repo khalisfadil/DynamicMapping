@@ -49,8 +49,8 @@ public:
     //##############################################################################
     // Constructor with one-time parameters
     ClusterExtractor(double clusterTolerance,
-                     int minClusterSize,
-                     int maxClusterSize,
+                     uint32_t minClusterSize,
+                     uint32_t maxClusterSize,
                      double staticThreshold,
                      double dynamicScoreThreshold,
                      double densityThreshold,
@@ -84,19 +84,19 @@ public:
         // Optional constructor for explicit initialization
         ClusterProperties()
             : clusterID(-1),
-            data(),
-            centroid(Eigen::Vector3d::Zero()),
-            boundingBoxMin(Eigen::Vector3d::Zero()),
-            boundingBoxMax(Eigen::Vector3d::Zero()),
-            velocity(Eigen::Vector3d::Zero()),
-            density(0.0),
-            avgReflectivity(0.0f),
-            avgIntensity(0.0f),
-            avgNIR(0.0f),
-            pointCount(0),
-            isDynamic(false),
-            dynamicScore(0.0),
-            velocityConsistencyScore(0.0) {}
+              data(),
+              centroid(Eigen::Vector3d::Zero()),
+              boundingBoxMin(Eigen::Vector3d::Zero()),
+              boundingBoxMax(Eigen::Vector3d::Zero()),
+              velocity(Eigen::Vector3d::Zero()),
+              density(0.0),
+              avgReflectivity(0.0f),
+              avgIntensity(0.0f),
+              avgNIR(0.0f),
+              pointCount(0),
+              isDynamic(false),
+              dynamicScore(0.0),
+              velocityConsistencyScore(0.0) {}
     };
     //##############################################################################
     // Main Pipeline
