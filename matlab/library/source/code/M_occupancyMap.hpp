@@ -30,7 +30,7 @@ class OccupancyMap {
         //##############################################################################
         // Struct to store point data within each voxel
         struct PointData {
-            Eigen::Vector3d position;  // Position of the point
+            Eigen::Vector3f position;  // Position of the point
             float reflectivity;
             float intensity;
             float NIR;
@@ -47,7 +47,7 @@ class OccupancyMap {
         // Struct to store voxel data, including a fixed-size vector of points and aggregate metrics
         struct VoxelData {
             std::vector<PointData> points;  // Changed from std::deque to std::vector
-            Eigen::Vector3d centerPosition;
+            Eigen::Vector3f centerPosition;
             float totalReflectivity = 0.0f;
             float totalIntensity = 0.0f;
             float totalNIR = 0.0f;
@@ -60,7 +60,7 @@ class OccupancyMap {
 
             // Default constructor initializes all members
             VoxelData() 
-                : centerPosition(Eigen::Vector3d::Zero()),  // Initialize to (0, 0, 0)
+                : centerPosition(Eigen::Vector3f::Zero()),  // Initialize to (0, 0, 0)
                 totalReflectivity(0.0f),
                 totalIntensity(0.0f),
                 totalNIR(0.0f),
@@ -75,17 +75,17 @@ class OccupancyMap {
         };
         //##############################################################################
         // Constructor with one-time parameters
-        OccupancyMap(double mapRes,
-                        double reachingDistance,
-                        Eigen::Vector3d mapCenter);
+        OccupancyMap(float mapRes,
+                        float reachingDistance,
+                        Eigen::Vector3f mapCenter);
         //##############################################################################
         // Main Pipeline runOccupancyMapPipeline
-        void runOccupancyMapPipeline(const std::vector<Eigen::Vector3d>& pointCloud,
+        void runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& pointCloud,
                                         const std::vector<float>& reflectivity,
                                         const std::vector<float>& intensity,
                                         const std::vector<float>& NIR,
                                         const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud,
-                                        const Eigen::Vector3d& newPosition,
+                                        const Eigen::Vector3f& newPosition,
                                         uint32_t newFrame);
         //##############################################################################
         // getDynamicVoxels
@@ -95,7 +95,7 @@ class OccupancyMap {
         std::vector<VoxelData> getStaticVoxels() const;
         //##############################################################################
         // getAllVoxelCenters
-        std::vector<Eigen::Vector3d> getVoxelCenters(const std::vector<VoxelData>& voxels);
+        std::vector<Eigen::Vector3f> getVoxelCenters(const std::vector<VoxelData>& voxels);
         //##############################################################################
         // computeVoxelColors
         std::tuple<std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>> computeVoxelColors(const std::vector<VoxelData>& voxels);
@@ -105,10 +105,10 @@ class OccupancyMap {
     private:
         //##############################################################################
         // Persistent member variables (one-time defined parameters)
-        double mapRes_;
-        double reachingDistance_;
-        Eigen::Vector3d mapCenter_;
-        Eigen::Vector3d vehiclePosition_;
+        float mapRes_;
+        float reachingDistance_;
+        Eigen::Vector3f mapCenter_;
+        Eigen::Vector3f vehiclePosition_;
         uint32_t currentFrame_;
         //##############################################################################
         // Custom hash function for Eigen::Vector3i
@@ -128,28 +128,28 @@ class OccupancyMap {
         tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> insertedVoxels_;
         //##############################################################################
         // updateVehiclePosition
-        void updateVehiclePosition(const Eigen::Vector3d& newPosition);
+        void updateVehiclePosition(const Eigen::Vector3f& newPosition);
         //##############################################################################
         // updateCurrentFrame
         void updateCurrentFrame(uint32_t newFrame);
         //##############################################################################
         // Convert position to voxel grid index
-        Eigen::Vector3i posToGridIndex(const Eigen::Vector3d& pos) const;
+        Eigen::Vector3i posToGridIndex(const Eigen::Vector3f& pos) const;
         //##############################################################################
         // Convert grid index back to world position (center of voxel)
-        Eigen::Vector3d gridToWorld(const Eigen::Vector3i& gridIndex) const;
+        Eigen::Vector3f gridToWorld(const Eigen::Vector3i& gridIndex) const;
         //##############################################################################
         // Calculate average values for a voxel
         void updateVoxelAverages(VoxelData& voxel) const;
         //##############################################################################
         // Insert point Cloud into occupancy Map
-        void insertPointCloud(const std::vector<Eigen::Vector3d>& pointCloud,
+        void insertPointCloud(const std::vector<Eigen::Vector3f>& pointCloud,
                                     const std::vector<float>& reflectivity,
                                     const std::vector<float>& intensity,
                                     const std::vector<float>& NIR);
         //##############################################################################
         // Perform raycast to remove voxel
-        std::vector<Eigen::Vector3i> performRaycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end);
+        std::vector<Eigen::Vector3i> performRaycast(const Eigen::Vector3f& start, const Eigen::Vector3f& end);
         //##############################################################################
         // Perform markVoxelsForClearing
         void markVoxelsForClearing();
@@ -164,11 +164,11 @@ class OccupancyMap {
         Eigen::Vector3i calculateOccupancyColor(const VoxelData& voxel);
         //##############################################################################
         // Calculate reflectivity color
-        Eigen::Vector3i calculateReflectivityColor(double avgReflectivity);
+        Eigen::Vector3i calculateReflectivityColor(float avgReflectivity);
         //##############################################################################
         // Calculate intensity-based color
-        Eigen::Vector3i calculateIntensityColor(double avgIntensity);
+        Eigen::Vector3i calculateIntensityColor(float avgIntensity);
         //##############################################################################
         // Calculate NIR-based color
-        Eigen::Vector3i calculateNIRColor(double avgNIR);
+        Eigen::Vector3i calculateNIRColor(float avgNIR);
 };

@@ -27,33 +27,33 @@ class EKFVelocity2D {
 public:
     //##############################################################################
     // EKFVelocity2D
-    EKFVelocity2D(const Eigen::Vector2d& initialPosition);
+    EKFVelocity2D(const Eigen::Vector2f& initialPosition);
     //##############################################################################
     // predict
     void predict(double dt);  // Predict with variable dt
     //##############################################################################
     // update
-    void update(const Eigen::Vector2d& positionMeasurement);
+    void update(const Eigen::Vector2f& positionMeasurement);
     //##############################################################################
     // clone
     std::unique_ptr<EKFVelocity2D> clone() const;
     //##############################################################################
     // getStateVelocityError
-    double getStateVelocityError() const ;
+    float getStateVelocityError() const ;
     //##############################################################################
     // getPredictedVelocity
-    Eigen::Vector2d getPredictedVelocity() const;
+    Eigen::Vector2f getPredictedVelocity() const;
 
 private:
     //##############################################################################
     // Persistent member variables (one-time defined parameters)
-    Eigen::Vector4d x_;  // State vector [x, y, vx, vy]
-    Eigen::Matrix4d P_;  // Covariance matrix
-    Eigen::Matrix4d Q_;  // Process noise
-    Eigen::Matrix2d R_;  // Measurement noise
-    Eigen::Matrix4d F_;  // State transition matrix
-    Eigen::Matrix<double, 2, 4> H_;  // Measurement matrix
-    Eigen::Vector4d predictedState_;  // Store the predicted state for error calculation
-    double stateVelocityError_;
+    Eigen::Vector4f x_;  // State vector [x, y, vx, vy]
+    Eigen::Matrix4f P_;  // Covariance matrix
+    Eigen::Matrix4f Q_;  // Process noise
+    Eigen::Matrix2f R_;  // Measurement noise
+    Eigen::Matrix4f F_;  // State transition matrix
+    Eigen::Matrix<float, 2, 4> H_;  // Measurement matrix
+    Eigen::Vector4f predictedState_;  // Store the predicted state for error calculation
+    float stateVelocityError_;
 };
 

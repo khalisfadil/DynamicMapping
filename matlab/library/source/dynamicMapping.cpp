@@ -44,23 +44,23 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
                           float* reflectivity,                  //u3
                           float* intensity,                     //u4
                           float* NIR,                           //u5
-                          double* vehiclePosition,              //u6
+                          float* vehiclePosition,              //u6
                           uint32_t currFrame,                   //u7
-                          double mapRes,                        //u8
-                          double reachingDistance,              //u9
-                          double* mapCenter,                    //u10
-                          double clusterTolerance,              //u11
+                          float mapRes,                        //u8
+                          float reachingDistance,              //u9
+                          float* mapCenter,                    //u10
+                          float clusterTolerance,              //u11
                           uint32_t minClusterSize,              //u12
                           uint32_t maxClusterSize,              //u13
-                          double staticThreshold,               //u14
-                          double dynamicScoreThreshold,         //u15
-                          double densityThreshold,              //u16
-                          double velocityThreshold,             //u17
-                          double similarityThreshold,           //u18
-                          double maxDistanceThreshold,          //u19
+                          float staticThreshold,               //u14
+                          float dynamicScoreThreshold,         //u15
+                          float densityThreshold,              //u16
+                          float velocityThreshold,             //u17
+                          float similarityThreshold,           //u18
+                          float maxDistanceThreshold,          //u19
                           double dt,                            //u20
-                          double* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,       //y1 y2
-                          double* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,     //y3 y4
+                          float* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,       //y1 y2
+                          float* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,     //y3 y4
                           int* outputStaticOccupancyColors,                                 //y5
                           int* outputStaticReflectivityColors,                              //y6
                           int* outputStaticIntensityColors,                                 //y7
@@ -68,8 +68,8 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
                           int* outputDynamicColors) {                                       //y9
 
     // Initialize output arrays
-    std::fill(outputStaticVoxelVec, outputStaticVoxelVec + MAX_STATIC_OCCUPANCY * 3, std::numeric_limits<double>::quiet_NaN());
-    std::fill(outputDynamicVoxelVec, outputDynamicVoxelVec + MAX_DYNAMIC_OCCUPANCY * 3, std::numeric_limits<double>::quiet_NaN());
+    std::fill(outputStaticVoxelVec, outputStaticVoxelVec + MAX_STATIC_OCCUPANCY * 3, std::numeric_limits<float>::quiet_NaN());
+    std::fill(outputDynamicVoxelVec, outputDynamicVoxelVec + MAX_DYNAMIC_OCCUPANCY * 3, std::numeric_limits<float>::quiet_NaN());
     std::fill(outputStaticOccupancyColors, outputStaticOccupancyColors + MAX_STATIC_OCCUPANCY * 3, -1);
     std::fill(outputStaticReflectivityColors, outputStaticReflectivityColors + MAX_STATIC_OCCUPANCY * 3, -1);
     std::fill(outputStaticIntensityColors, outputStaticIntensityColors + MAX_STATIC_OCCUPANCY * 3, -1);
@@ -80,8 +80,8 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     staticVoxelVecSize = 0;
     dynamicVoxelVecSize = 0;
 
-    Eigen::Vector3d mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
-    Eigen::Vector3d vehiclePos(vehiclePosition[0], vehiclePosition[1], vehiclePosition[2]);
+    Eigen::Vector3f mapCenterVec(mapCenter[0], mapCenter[1], mapCenter[2]);
+    Eigen::Vector3f vehiclePos(vehiclePosition[0], vehiclePosition[1], vehiclePosition[2]);
 
     try {
         if (!occupancyMapInstance || !clusterExtractorInstance) {
@@ -96,7 +96,7 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     }
 
     // Pre-size vectors to avoid resizing during parallel processing
-    std::vector<Eigen::Vector3d> pointCloud(numInputCloud);
+    std::vector<Eigen::Vector3f> pointCloud(numInputCloud);
     std::vector<float> reflectivityVec(numInputCloud);
     std::vector<float> intensityVec(numInputCloud);
     std::vector<float> NIRVec(numInputCloud);
@@ -105,7 +105,7 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     tbb::parallel_for(tbb::blocked_range<uint32_t>(0, numInputCloud),
         [&](const tbb::blocked_range<uint32_t>& range) {
             for (uint32_t i = range.begin(); i < range.end(); ++i) {
-                pointCloud[i] = Eigen::Vector3d(inputCloud[i * 3], inputCloud[i * 3 + 1], inputCloud[i * 3 + 2]);
+                pointCloud[i] = Eigen::Vector3f(inputCloud[i * 3], inputCloud[i * 3 + 1], inputCloud[i * 3 + 2]);
                 reflectivityVec[i] = reflectivity[i];
                 intensityVec[i] = intensity[i];
                 NIRVec[i] = NIR[i];
@@ -126,7 +126,7 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     std::vector<OccupancyMap::VoxelData> staticVoxel = occupancyMapInstance->getStaticVoxels();
     if (!staticVoxel.empty()) {
         auto voxelColors = occupancyMapInstance->computeVoxelColors(staticVoxel);
-        std::vector<Eigen::Vector3d> staticVoxelVec = occupancyMapInstance->getVoxelCenters(staticVoxel);
+        std::vector<Eigen::Vector3f> staticVoxelVec = occupancyMapInstance->getVoxelCenters(staticVoxel);
         staticVoxelVecSize = std::min(static_cast<uint32_t>(staticVoxelVec.size()), MAX_STATIC_OCCUPANCY);
 
         const auto& occupancyColors = std::get<0>(voxelColors);
@@ -160,7 +160,7 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     // Process dynamic voxels
     std::vector<OccupancyMap::VoxelData> dynamicVoxel = occupancyMapInstance->getDynamicVoxels();
     if (!dynamicVoxel.empty()) {
-        std::vector<Eigen::Vector3d> dynamicVoxelVec = occupancyMapInstance->getVoxelCenters(dynamicVoxel);
+        std::vector<Eigen::Vector3f> dynamicVoxelVec = occupancyMapInstance->getVoxelCenters(dynamicVoxel);
         dynamicVoxelVecSize = std::min(static_cast<uint32_t>(dynamicVoxelVec.size()), MAX_DYNAMIC_OCCUPANCY);
         std::vector<Eigen::Vector3i> dynamicVoxelColor = occupancyMapInstance->assignVoxelColorsRed(dynamicVoxel);
 

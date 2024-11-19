@@ -22,18 +22,18 @@
 #include "occupancyMap.hpp"
 //##############################################################################
 // Constructor
-OccupancyMap::OccupancyMap(double mapRes, double reachingDistance, Eigen::Vector3d mapCenter)
+OccupancyMap::OccupancyMap(float mapRes, float reachingDistance, Eigen::Vector3f mapCenter)
     : mapRes_(mapRes), reachingDistance_(reachingDistance), mapCenter_(mapCenter)  {
     // constructor body
 }
 //##############################################################################
 // Main Pipeline
-void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3d>& pointCloud,
+void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& pointCloud,
                                            const std::vector<float>& reflectivity,
                                            const std::vector<float>& intensity,
                                            const std::vector<float>& NIR,
                                            const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud,
-                                           const Eigen::Vector3d& newPosition,
+                                           const Eigen::Vector3f& newPosition,
                                            uint32_t newFrame) {
     // Step 0: Update persistent state
     updateVehiclePosition(newPosition);
@@ -55,7 +55,7 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3d>& p
 }
 //##############################################################################
 // Function to update the vehicle position
-void OccupancyMap::updateVehiclePosition(const Eigen::Vector3d& newPosition) {
+void OccupancyMap::updateVehiclePosition(const Eigen::Vector3f& newPosition) {
     vehiclePosition_ = newPosition;
 }
 //##############################################################################
@@ -65,15 +65,15 @@ void OccupancyMap::updateCurrentFrame(uint32_t newFrame) {
 }
 //##############################################################################
 // Convert position to voxel grid index
-Eigen::Vector3i OccupancyMap::posToGridIndex(const Eigen::Vector3d& pos) const {
-    Eigen::Array3d scaledPos = (pos - mapCenter_).array() * (1.0 / mapRes_);
+Eigen::Vector3i OccupancyMap::posToGridIndex(const Eigen::Vector3f& pos) const {
+    Eigen::Array3f scaledPos = (pos - mapCenter_).array() * (1.0 / mapRes_);
     return Eigen::Vector3i(std::floor(scaledPos.x()), std::floor(scaledPos.y()), std::floor(scaledPos.z()));
 }
 //##############################################################################
 // Convert grid index back to world position (center of voxel)
-Eigen::Vector3d OccupancyMap::gridToWorld(const Eigen::Vector3i& gridIndex) const {
-    static const Eigen::Vector3d halfRes(mapRes_ / 2, mapRes_ / 2, mapRes_ / 2);
-    return mapCenter_ + gridIndex.cast<double>() * mapRes_ + halfRes;
+Eigen::Vector3f OccupancyMap::gridToWorld(const Eigen::Vector3i& gridIndex) const {
+    static const Eigen::Vector3f halfRes(mapRes_ / 2, mapRes_ / 2, mapRes_ / 2);
+    return mapCenter_ + gridIndex.cast<float>() * mapRes_ + halfRes;
 }
 //##############################################################################
 // Calculate average values for a voxel
@@ -88,7 +88,7 @@ void OccupancyMap::updateVoxelAverages(VoxelData& voxel) const {
 }
 //##############################################################################
 // insert the point cloud into occupancy map
-void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3d>& pointCloud,
+void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointCloud,
                                    const std::vector<float>& reflectivity,
                                    const std::vector<float>& intensity,
                                    const std::vector<float>& NIR) {
@@ -102,7 +102,7 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3d>& pointClo
             tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> localMap) {
 
             for (uint64_t i = range.begin(); i < range.end(); ++i) {
-                const Eigen::Vector3d& point = pointCloud[i];
+                const Eigen::Vector3f& point = pointCloud[i];
                 Eigen::Vector3i gridIndex = posToGridIndex(point);
                 auto& voxel = localMap[gridIndex];
 
@@ -183,24 +183,24 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3d>& pointClo
 }
 //##############################################################################
 // Perform raycast to remove voxel
-std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end) {
+std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f& start, const Eigen::Vector3f& end) {
     // Define a small threshold for "close" points
-    const double closeThreshold = 1e-3;
+    const float closeThreshold = 1e-3;
 
     // If start and end points are too close, return the starting voxel only
     if ((end - start).squaredNorm() < closeThreshold * closeThreshold) {
         return { posToGridIndex(start) };
     }
     // Precompute values for the loop to avoid recalculating in each iteration
-    Eigen::Vector3d direction = (end - start).normalized();
-    double distance = (end - start).norm();
+    Eigen::Vector3f direction = (end - start).normalized();
+    float distance = (end - start).norm();
     // Initialize voxel collection
     tsl::robin_set<Eigen::Vector3i, Vector3iHash, Vector3iEqual> uniqueVoxels;
     Eigen::Vector3i lastVoxelIndex = posToGridIndex(start);
     uniqueVoxels.insert(lastVoxelIndex);
     // Use a single position variable and avoid unnecessary recalculations in each step
-    Eigen::Vector3d currentPos = start;
-    for (double step = mapRes_; step < distance; step += mapRes_) {
+    Eigen::Vector3f currentPos = start;
+    for (float step = mapRes_; step < distance; step += mapRes_) {
         currentPos += direction * mapRes_;
         Eigen::Vector3i voxelIndex = posToGridIndex(currentPos);
 
@@ -311,9 +311,9 @@ std::vector<OccupancyMap::VoxelData> OccupancyMap::getStaticVoxels() const {
 }
 //##############################################################################
 // getVoxelCenters
-std::vector<Eigen::Vector3d> OccupancyMap::getVoxelCenters(const std::vector<OccupancyMap::VoxelData>& voxels) {
+std::vector<Eigen::Vector3f> OccupancyMap::getVoxelCenters(const std::vector<OccupancyMap::VoxelData>& voxels) {
     // Preallocate the exact size needed to avoid resizing and reserve overhead
-    std::vector<Eigen::Vector3d> voxelCenters(voxels.size());
+    std::vector<Eigen::Vector3f> voxelCenters(voxels.size());
 
     // Use std::transform to fill voxelCenters with center positions from each voxel
     std::transform(voxels.begin(), voxels.end(), voxelCenters.begin(),
@@ -329,20 +329,20 @@ Eigen::Vector3i OccupancyMap::calculateOccupancyColor(const OccupancyMap::VoxelD
 }
 //##############################################################################
 // Calculate reflectivity color
-Eigen::Vector3i OccupancyMap::calculateReflectivityColor(double avgReflectivity) {
+Eigen::Vector3i OccupancyMap::calculateReflectivityColor(float avgReflectivity) {
     int reflectivityColorValue;
 
-    if (avgReflectivity <= 100) {
-        reflectivityColorValue = static_cast<int>(avgReflectivity * 2.55);  // Linear scale 0–100 to 0–255
+    if (avgReflectivity <= 100.0f) {
+        reflectivityColorValue = static_cast<int>(avgReflectivity * 2.55f);  // Linear scale 0–100 to 0–255
     } else {
         float transitionFactor = 0.2f;
-        if (avgReflectivity <= 110) {
-            float linearComponent = 2.55 * avgReflectivity;
-            float logComponent = 155 + (100 * (std::log2(avgReflectivity - 100 + 1) / std::log2(156)));
-            reflectivityColorValue = static_cast<int>((1 - transitionFactor) * linearComponent + transitionFactor * logComponent);
+        if (avgReflectivity <= 110.0f) {
+            float linearComponent = 2.55f * avgReflectivity;
+            float logComponent = 155.0f + (100.0f * (std::log2(avgReflectivity - 100.0f + 1.0f) / std::log2(156.0f)));
+            reflectivityColorValue = static_cast<int>((1.0f - transitionFactor) * linearComponent + transitionFactor * logComponent);
         } else {
-            float logReflectivity = std::log2(avgReflectivity - 100 + 1) / std::log2(156);  
-            reflectivityColorValue = static_cast<int>(155 + logReflectivity * 100); 
+            float logReflectivity = std::log2(avgReflectivity - 100.0f + 1.0f) / std::log2(156.0f);  
+            reflectivityColorValue = static_cast<int>(155.0f + logReflectivity * 100.0f); 
         }
     }
     return Eigen::Vector3i(std::clamp(reflectivityColorValue, 0, 255), 
@@ -351,15 +351,15 @@ Eigen::Vector3i OccupancyMap::calculateReflectivityColor(double avgReflectivity)
 }
 //##############################################################################
 // Calculate intensity-based color
-Eigen::Vector3i OccupancyMap::calculateIntensityColor(double avgIntensity) {
-    int intensityColorValue = static_cast<int>(std::clamp(avgIntensity, 0.0, 255.0));  // Clamped 0–255
+Eigen::Vector3i OccupancyMap::calculateIntensityColor(float avgIntensity) {
+    int intensityColorValue = static_cast<int>(std::clamp(avgIntensity, 0.0f, 255.0f));  // Clamped 0–255
     return Eigen::Vector3i(intensityColorValue, intensityColorValue, intensityColorValue);
 }
 //##############################################################################
 // Calculate NIR-based color
-Eigen::Vector3i OccupancyMap::calculateNIRColor(double avgNIR) {
+Eigen::Vector3i OccupancyMap::calculateNIRColor(float avgNIR) {
     // Clamp avgNIR directly to 0-255 range, as NIR values over 255 should still map to 255
-    int NIRColorValue = static_cast<int>(std::clamp(avgNIR, 0.0, 255.0));
+    int NIRColorValue = static_cast<int>(std::clamp(avgNIR, 0.0f, 255.0f));
     return Eigen::Vector3i(NIRColorValue, NIRColorValue, NIRColorValue);
 }
 //##############################################################################

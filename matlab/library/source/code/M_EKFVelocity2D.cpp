@@ -23,27 +23,27 @@
 
 //##############################################################################
 // EKFVelocity2D Constructor
-EKFVelocity2D::EKFVelocity2D(const Eigen::Vector2d& initialPosition) {
+EKFVelocity2D::EKFVelocity2D(const Eigen::Vector2f& initialPosition) {
     // Initialize state vector with given position and zero velocity
     x_ << initialPosition(0), initialPosition(1), 0.0, 0.0;
 
     // Initialize the covariance matrix with high uncertainty for velocity
-    P_ = Eigen::Matrix4d::Identity();
-    P_(2, 2) = 1000.0;  // High uncertainty in x velocity
-    P_(3, 3) = 1000.0;  // High uncertainty in y velocity
+    P_ = Eigen::Matrix4f::Identity();
+    P_(2, 2) = 1000.0f;  // High uncertainty in x velocity
+    P_(3, 3) = 1000.0f;  // High uncertainty in y velocity
 
-    Q_ = Eigen::Matrix4d::Identity() * 0.1;  // Process noise
-    R_ = Eigen::Matrix2d::Identity() * 0.1;  // Measurement noise
+    Q_ = Eigen::Matrix4f::Identity() * 0.1f;  // Process noise
+    R_ = Eigen::Matrix2f::Identity() * 0.1f;  // Measurement noise
 
     // Initialize F_ with a default time step of 1.0 (will be updated in predict)
-    F_ << 1, 0, 1.0, 0,
-          0, 1, 0, 1.0,
-          0, 0, 1, 0,
-          0, 0, 0, 1;
+    F_ << 1.0f, 0.0f, 1.0f, 0.0f,
+          0.0f, 1.0f, 0.0f, 1.0f,
+          0.0f, 0.0f, 1.0f, 0.0f,
+          0.0f, 0.0f, 0.0f, 1.0f;
 
     // Measurement model (we observe position only)
-    H_ << 1, 0, 0, 0,
-          0, 1, 0, 0;
+    H_ << 1.0f, 0.0f, 0.0f, 0.0f,
+          0.0f, 1.0f, 0.0f, 0.0f;
 }
 //##############################################################################
 // predict
@@ -61,12 +61,12 @@ void EKFVelocity2D::predict(double dt) {
 }
 //##############################################################################
 // update
-void EKFVelocity2D::update(const Eigen::Vector2d& positionMeasurement) {
-    Eigen::Vector2d y = positionMeasurement - H_ * x_;  // Measurement residual
-    Eigen::Matrix2d S = H_ * P_ * H_.transpose() + R_;  // Residual covariance
-    Eigen::Matrix<double, 4, 2> K = P_ * H_.transpose() * S.inverse();  // Kalman gain
+void EKFVelocity2D::update(const Eigen::Vector2f& positionMeasurement) {
+    Eigen::Vector2f y = positionMeasurement - H_ * x_;  // Measurement residual
+    Eigen::Matrix2f S = H_ * P_ * H_.transpose() + R_;  // Residual covariance
+    Eigen::Matrix<float, 4, 2> K = P_ * H_.transpose() * S.inverse();  // Kalman gain
     x_ += K * y;  // Update state with measurement
-    P_ = (Eigen::Matrix4d::Identity() - K * H_) * P_;  // Update covariance
+    P_ = (Eigen::Matrix4f::Identity() - K * H_) * P_;  // Update covariance
 
     // Calculate the error as the norm of the difference between predicted and updated states
     stateVelocityError_ = (x_.segment<2>(2) - predictedState_.segment<2>(2)).norm();
@@ -74,13 +74,13 @@ void EKFVelocity2D::update(const Eigen::Vector2d& positionMeasurement) {
 
 //##############################################################################
 // getStateVelocityError
-double EKFVelocity2D::getStateVelocityError() const {
+float EKFVelocity2D::getStateVelocityError() const {
     // `const` ensures this function doesn't modify the object state
     return stateVelocityError_;
 }
 //##############################################################################
 // getPredictedVelocity
-Eigen::Vector2d EKFVelocity2D::getPredictedVelocity() const {
+Eigen::Vector2f EKFVelocity2D::getPredictedVelocity() const {
     // `const` ensures this function doesn't modify the object state
     return x_.segment<2>(2);  // Extracts the velocity [vx, vy]
 }
@@ -88,7 +88,7 @@ Eigen::Vector2d EKFVelocity2D::getPredictedVelocity() const {
 // clone
 std::unique_ptr<EKFVelocity2D> EKFVelocity2D::clone() const {
     // `const` ensures the clone function doesn't modify the object state
-    auto newEKF = std::make_unique<EKFVelocity2D>(Eigen::Vector2d(x_[0], x_[1])); // Copy initial position
+    auto newEKF = std::make_unique<EKFVelocity2D>(Eigen::Vector2f(x_[0], x_[1])); // Copy initial position
     newEKF->x_ = this->x_;      // Copy state
     newEKF->P_ = this->P_;      // Copy covariance
     newEKF->Q_ = this->Q_;      // Copy process noise

@@ -48,59 +48,59 @@ class ClusterExtractor {
 public:
     //##############################################################################
     // Constructor with one-time parameters
-    ClusterExtractor(double clusterTolerance,
+    ClusterExtractor(float clusterTolerance,
                      uint32_t minClusterSize,
                      uint32_t maxClusterSize,
-                     double staticThreshold,
-                     double dynamicScoreThreshold,
-                     double densityThreshold,
-                     double velocityThreshold,
-                     double similarityThreshold,
-                     double maxDistanceThreshold,
+                     float staticThreshold,
+                     float dynamicScoreThreshold,
+                     float densityThreshold,
+                     float velocityThreshold,
+                     float similarityThreshold,
+                     float maxDistanceThreshold,
                      double dt);
     //##############################################################################
     // Structure to hold point information within each cluster
     struct PointWithAttributes {
-        Eigen::Vector3d position;float reflectivity;float intensity;float NIR;
+        Eigen::Vector3f position;float reflectivity;float intensity;float NIR;
     };
     //##############################################################################
     // Structure to store properties of each cluster
     struct ClusterProperties {
         int clusterID = -1;                                 // Default invalid cluster ID
         std::vector<PointWithAttributes> data;             // Data points in the cluster
-        Eigen::Vector3d centroid = Eigen::Vector3d::Zero();        // Default centroid at origin
-        Eigen::Vector3d boundingBoxMin = Eigen::Vector3d::Zero();  // Default bounding box min at origin
-        Eigen::Vector3d boundingBoxMax = Eigen::Vector3d::Zero();  // Default bounding box max at origin
-        Eigen::Vector3d velocity = Eigen::Vector3d::Zero();        // Default velocity at zero
-        double density = 0.0;                              // Default density
+        Eigen::Vector3f centroid = Eigen::Vector3f::Zero();        // Default centroid at origin
+        Eigen::Vector3f boundingBoxMin = Eigen::Vector3f::Zero();  // Default bounding box min at origin
+        Eigen::Vector3f boundingBoxMax = Eigen::Vector3f::Zero();  // Default bounding box max at origin
+        Eigen::Vector3f velocity = Eigen::Vector3f::Zero();        // Default velocity at zero
+        float density = 0.0f;                              // Default density
         float avgReflectivity = 0.0f;                      // Default average reflectivity
         float avgIntensity = 0.0f;                         // Default average intensity
         float avgNIR = 0.0f;                               // Default average NIR
         int pointCount = 0;                                // Default point count
         bool isDynamic = false;                            // Default dynamic status
-        double dynamicScore = 0.0;                         // Default dynamic confidence score
-        double velocityConsistencyScore = 0.0;             // Default EKF velocity consistency score
+        float dynamicScore = 0.0f;                         // Default dynamic confidence score
+        float velocityConsistencyScore = 0.0f;             // Default EKF velocity consistency score
 
         // Optional constructor for explicit initialization
         ClusterProperties()
             : clusterID(-1),
               data(),
-              centroid(Eigen::Vector3d::Zero()),
-              boundingBoxMin(Eigen::Vector3d::Zero()),
-              boundingBoxMax(Eigen::Vector3d::Zero()),
-              velocity(Eigen::Vector3d::Zero()),
-              density(0.0),
+              centroid(Eigen::Vector3f::Zero()),
+              boundingBoxMin(Eigen::Vector3f::Zero()),
+              boundingBoxMax(Eigen::Vector3f::Zero()),
+              velocity(Eigen::Vector3f::Zero()),
+              density(0.0f),
               avgReflectivity(0.0f),
               avgIntensity(0.0f),
               avgNIR(0.0f),
               pointCount(0),
               isDynamic(false),
-              dynamicScore(0.0),
-              velocityConsistencyScore(0.0) {}
+              dynamicScore(0.0f),
+              velocityConsistencyScore(0.0f) {}
     };
     //##############################################################################
     // Main Pipeline
-    void runClusterExtractorPipeline(const std::vector<Eigen::Vector3d>& pointCloud,
+    void runClusterExtractorPipeline(const std::vector<Eigen::Vector3f>& pointCloud,
                                         const std::vector<float>& reflectivity,
                                         const std::vector<float>& intensity,
                                         const std::vector<float>& NIR);
@@ -116,18 +116,17 @@ public:
 private:
     //##############################################################################
     // Persistent member variables (one-time defined parameters)
-    double clusterTolerance_;
+    float clusterTolerance_;
     int minClusterSize_;
     int maxClusterSize_;
-    double staticThreshold_;
-    double dynamicScoreThreshold_;
-    double densityThreshold_;
-    double velocityThreshold_;
-    double similarityThreshold_;
-    double maxDistanceThreshold_;
+    float staticThreshold_;
+    float dynamicScoreThreshold_;
+    float densityThreshold_;
+    float velocityThreshold_;
+    float similarityThreshold_;
+    float maxDistanceThreshold_;
     double dt_;
     int newClusterID;
-
     //##############################################################################
     // Persistent previous clusters
     std::deque<tsl::robin_map<int, ClusterProperties>> prevClusterMap_;
@@ -145,7 +144,7 @@ private:
     std::vector<std::tuple<ClusterProperties*, ClusterProperties*, int>> persistentAssociations_;
     //##############################################################################
     // Extract cluster
-    void extractClusters(const std::vector<Eigen::Vector3d>& pointCloud,
+    void extractClusters(const std::vector<Eigen::Vector3f>& pointCloud,
                                        const std::vector<float>& reflectivity,
                                        const std::vector<float>& intensity,
                                        const std::vector<float>& NIR);
@@ -154,11 +153,11 @@ private:
     void calculateClusterProperties();
     //##############################################################################
     // Calculate bounding box consistency score between two clusters
-    double calculateBoundingBoxScore(const ClusterProperties& clusterA,
+    float calculateBoundingBoxScore(const ClusterProperties& clusterA,
                                      const ClusterProperties& clusterB) const;
     //##############################################################################
     // Calculate similarity score between two clusters
-    double calculateSimilarityScore(const ClusterProperties& clusterA,
+    float calculateSimilarityScore(const ClusterProperties& clusterA,
                                     const ClusterProperties& clusterB) const;
     //##############################################################################
     // Function to associate clusters across frames

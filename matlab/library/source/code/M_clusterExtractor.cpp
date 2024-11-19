@@ -23,15 +23,15 @@
 
 //##############################################################################
 // Constructor
-ClusterExtractor::ClusterExtractor(double clusterTolerance,
+ClusterExtractor::ClusterExtractor(float clusterTolerance,
                                    uint32_t minClusterSize,
                                    uint32_t maxClusterSize,
-                                   double staticThreshold,
-                                   double dynamicScoreThreshold,
-                                   double densityThreshold,
-                                   double velocityThreshold,
-                                   double similarityThreshold,
-                                   double maxDistanceThreshold,
+                                   float staticThreshold,
+                                   float dynamicScoreThreshold,
+                                   float densityThreshold,
+                                   float velocityThreshold,
+                                   float similarityThreshold,
+                                   float maxDistanceThreshold,
                                    double dt)
     : clusterTolerance_(clusterTolerance),
       minClusterSize_(minClusterSize),
@@ -47,7 +47,7 @@ ClusterExtractor::ClusterExtractor(double clusterTolerance,
 {}
 //##############################################################################
 // Main pipeline  
-void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vector3d>& pointCloud,
+void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vector3f>& pointCloud,
                                                    const std::vector<float>& reflectivity,
                                                    const std::vector<float>& intensity,
                                                    const std::vector<float>& NIR) {
@@ -77,7 +77,7 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
 }
 //##############################################################################
 // Function to extract clusters using PCL's Euclidean Cluster Extraction
-void ClusterExtractor::extractClusters(const std::vector<Eigen::Vector3d>& pointCloud,
+void ClusterExtractor::extractClusters(const std::vector<Eigen::Vector3f>& pointCloud,
                                        const std::vector<float>& reflectivity,
                                        const std::vector<float>& intensity,
                                        const std::vector<float>& NIR) {
@@ -119,7 +119,7 @@ void ClusterExtractor::extractClusters(const std::vector<Eigen::Vector3d>& point
             cluster.reserve(indices.indices.size());
 
             for (int index : indices.indices) {
-                Eigen::Vector3d position(cloud->points[index].x, cloud->points[index].y, cloud->points[index].z);
+                Eigen::Vector3f position(cloud->points[index].x, cloud->points[index].y, cloud->points[index].z);
                 PointWithAttributes pointWithAttr = {
                     position,
                     reflectivity[index],  // Use the corresponding reflectivity value
@@ -151,13 +151,13 @@ void ClusterExtractor::calculateClusterProperties() {
 
             properties.data = cluster; // include all point inside the properties.
 
-            Eigen::Vector3d sum(0, 0, 0);
-            Eigen::Vector3d minBound = cluster[0].position;
-            Eigen::Vector3d maxBound = cluster[0].position;
+            Eigen::Vector3f sum(0, 0, 0);
+            Eigen::Vector3f minBound = cluster[0].position;
+            Eigen::Vector3f maxBound = cluster[0].position;
 
-            double totalReflectivity = 0.0;
-            double totalIntensity = 0.0;
-            double totalNIR = 0.0;
+            float totalReflectivity = 0.0f;
+            float totalIntensity = 0.0f;
+            float totalNIR = 0.0f;
 
             for (const auto& point : cluster) {
                 // Update centroid sum and bounding box
@@ -183,12 +183,12 @@ void ClusterExtractor::calculateClusterProperties() {
             properties.avgNIR = totalNIR / cluster.size();
 
             // Calculate the bounding box volume for 3D (or area for 2D)
-            double volume = (maxBound.x() - minBound.x()) *
+            float volume = (maxBound.x() - minBound.x()) *
                             (maxBound.y() - minBound.y()) *
                             (maxBound.z() - minBound.z());
             
             // Ensure the volume is positive to avoid division by zero
-            volume = std::max(volume, 1e-6);
+            volume = std::max(volume, 1e-6f);
 
             // Calculate density as the ratio of point count to volume
             properties.density = cluster.size() / volume;
@@ -200,47 +200,47 @@ void ClusterExtractor::calculateClusterProperties() {
 }
 //##############################################################################
 // Function to calculate bounding box overlap score
-double ClusterExtractor::calculateBoundingBoxScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
-    Eigen::Vector3d overlapMin = clusterA.boundingBoxMin.cwiseMax(clusterB.boundingBoxMin);
-    Eigen::Vector3d overlapMax = clusterA.boundingBoxMax.cwiseMin(clusterB.boundingBoxMax);
-    Eigen::Vector3d overlapDimensions = (overlapMax - overlapMin).cwiseMax(0);
+float ClusterExtractor::calculateBoundingBoxScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
+    Eigen::Vector3f overlapMin = clusterA.boundingBoxMin.cwiseMax(clusterB.boundingBoxMin);
+    Eigen::Vector3f overlapMax = clusterA.boundingBoxMax.cwiseMin(clusterB.boundingBoxMax);
+    Eigen::Vector3f overlapDimensions = (overlapMax - overlapMin).cwiseMax(0);
 
-    double overlapVolume = overlapDimensions.prod();
-    double minVolume = std::min((clusterA.boundingBoxMax - clusterA.boundingBoxMin).prod(),
+    float overlapVolume = overlapDimensions.prod();
+    float minVolume = std::min((clusterA.boundingBoxMax - clusterA.boundingBoxMin).prod(),
                                 (clusterB.boundingBoxMax - clusterB.boundingBoxMin).prod());
 
     // Return normalized overlap volume if minVolume > 0, else return 0
-    return (minVolume > 0) ? (overlapVolume / minVolume) : 0.0;
+    return (minVolume > 0) ? (overlapVolume / minVolume) : 0.0f;
 }
 //##############################################################################
 // Function to calculate similarity score based on position, bounding box, etc.
-double ClusterExtractor::calculateSimilarityScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
-    double score = 0.0;
+float ClusterExtractor::calculateSimilarityScore(const ClusterProperties& clusterA, const ClusterProperties& clusterB) const {
+    float score = 0.0f;
 
     // Weights for each component
-    const double distanceWeight = 0.4;
-    const double bboxWeight = 0.3;
-    const double reflectivityWeight = 0.1;
-    const double intensityWeight = 0.1;
-    const double nirWeight = 0.1;
+    const float distanceWeight = 0.4f;
+    const float bboxWeight = 0.3f;
+    const float reflectivityWeight = 0.1f;
+    const float intensityWeight = 0.1f;
+    const float nirWeight = 0.1f;
 
     // Centroid distance similarity
-    double distance = (clusterA.centroid - clusterB.centroid).norm();
+    float distance = (clusterA.centroid - clusterB.centroid).norm();
     score += distanceWeight * std::exp(-distance);
 
     // Bounding box similarity
     score += bboxWeight * calculateBoundingBoxScore(clusterA, clusterB);
 
     // Reflectivity similarity
-    double reflectivityDifference = std::abs(clusterA.avgReflectivity - clusterB.avgReflectivity);
+    float reflectivityDifference = std::abs(clusterA.avgReflectivity - clusterB.avgReflectivity);
     score += reflectivityWeight * std::exp(-reflectivityDifference);
 
     // Intensity similarity
-    double intensityDifference = std::abs(clusterA.avgIntensity - clusterB.avgIntensity);
+    float intensityDifference = std::abs(clusterA.avgIntensity - clusterB.avgIntensity);
     score += intensityWeight * std::exp(-intensityDifference);
 
     // NIR similarity
-    double NIRDifference = std::abs(clusterA.avgNIR - clusterB.avgNIR);
+    float NIRDifference = std::abs(clusterA.avgNIR - clusterB.avgNIR);
     score += nirWeight * std::exp(-NIRDifference);
 
     return score;
@@ -252,7 +252,7 @@ void ClusterExtractor::associateClusters() {
         return;  // No clusters to associate
     }
 
-    tbb::concurrent_bounded_queue<std::tuple<double, int, int>> scoreQueue;
+    tbb::concurrent_bounded_queue<std::tuple<float, int, int>> scoreQueue;
 
     // Clear persistent associations for the current frame
     persistentAssociations_.clear();
@@ -265,10 +265,10 @@ void ClusterExtractor::associateClusters() {
             // Compare with clusters from the previous 5 frames
             for (auto& frameMap : prevClusterMap_) {
                 for (auto& [prevID, prevCluster] : frameMap) {
-                    double distance = (currCluster.centroid - prevCluster.centroid).norm();
+                    float distance = (currCluster.centroid - prevCluster.centroid).norm();
                     if (distance > maxDistanceThreshold_) continue;
 
-                    double similarityScore = calculateSimilarityScore(currCluster, prevCluster);
+                    float similarityScore = calculateSimilarityScore(currCluster, prevCluster);
 
                     if (similarityScore > similarityThreshold_) {
                         scoreQueue.push(std::make_tuple(similarityScore, prevID, static_cast<int>(i)));
@@ -282,7 +282,7 @@ void ClusterExtractor::associateClusters() {
     tbb::concurrent_unordered_map<int, bool> matchedPrevClusters;
     tbb::concurrent_unordered_map<int, bool> matchedCurrClusters;
 
-    std::tuple<double, int, int> item;
+    std::tuple<float, int, int> item;
     while (scoreQueue.try_pop(item)) {
         auto [similarityScore, prevID, currIdx] = item;
 
@@ -336,14 +336,14 @@ void ClusterExtractor::updateEKFForClusters() {
             ekf.predict(effectiveDt);
 
             // Prepare the position measurement from the current cluster's centroid [x, y]
-            Eigen::Vector2d positionMeasurement = currClusterPtr->centroid.head<2>();
+            Eigen::Vector2f positionMeasurement = currClusterPtr->centroid.head<2>();
 
             // Perform the update step with the current position measurement
             ekf.update(positionMeasurement);
 
             // Assign the updated EKF state back to the current cluster's velocity
-            Eigen::Vector2d predictedVelocity2D = ekf.getPredictedVelocity();
-            currClusterPtr->velocity << predictedVelocity2D.x(), predictedVelocity2D.y(), 0.0;
+            Eigen::Vector2f predictedVelocity2D = ekf.getPredictedVelocity();
+            currClusterPtr->velocity << predictedVelocity2D.x(), predictedVelocity2D.y(), 0.0f;
         }
     }
 }
@@ -363,7 +363,7 @@ void ClusterExtractor::evaluateClusterDynamics() {
                 auto& ekf = *(it->second);
 
                 // Step 1: Check detected velocity from EKF to detect significant movement
-                double detectedSpeed = ekf.getPredictedVelocity().norm();
+                float detectedSpeed = ekf.getPredictedVelocity().norm();
                 if (detectedSpeed > 1.5) {
                     currClusterPtr->dynamicScore = 1.0;  // Full confidence in dynamic behavior
                     currClusterPtr->isDynamic = true;
@@ -373,42 +373,42 @@ void ClusterExtractor::evaluateClusterDynamics() {
                 // Step 2: Calculate dynamic score based on centroid, bounding box, density, velocity consistency, and previous dynamic state
 
                 // 1. Centroid movement score (high if centroids are far apart)
-                double distance = (currClusterPtr->centroid - prevClusterPtr->centroid).norm();
-                double centroidScore = 1.0 - std::exp(-distance / staticThreshold_);
+                float distance = (currClusterPtr->centroid - prevClusterPtr->centroid).norm();
+                float centroidScore = 1.0f - std::exp(-distance / staticThreshold_);
 
                 // 2. Bounding box consistency score (high if bounding boxes are inconsistent)
-                double boundingBoxScore = 1.0 - calculateBoundingBoxScore(*currClusterPtr, *prevClusterPtr);
+                float boundingBoxScore = 1.0f - calculateBoundingBoxScore(*currClusterPtr, *prevClusterPtr);
 
                 // 3. Density change score (high if density changes significantly)
-                double densityChange = std::abs(currClusterPtr->density - prevClusterPtr->density);
-                double densityScore = 1.0 - std::exp(-densityChange / densityThreshold_);
+                float densityChange = std::abs(currClusterPtr->density - prevClusterPtr->density);
+                float densityScore = 1.0f - std::exp(-densityChange / densityThreshold_);
 
                 // 4. Velocity consistency score from EKF
-                double velocityError = ekf.getStateVelocityError();
-                currClusterPtr->velocityConsistencyScore = 1.0 - std::exp(-velocityError / velocityThreshold_);
+                float velocityError = ekf.getStateVelocityError();
+                currClusterPtr->velocityConsistencyScore = 1.0f - std::exp(-velocityError / velocityThreshold_);
 
                 // 5. Previous dynamic state contribution
-                double prevDynamicScore = prevClusterPtr->dynamicScore; // Confidence score from the previous cluster
-                double prevDynamicWeight = 0.2; // Adjust this weight as necessary
+                float prevDynamicScore = prevClusterPtr->dynamicScore; // Confidence score from the previous cluster
+                float prevDynamicWeight = 0.2f; // Adjust this weight as necessary
 
                 // Calculate the final dynamic score, weighted by each factor
-                currClusterPtr->dynamicScore = (centroidScore * 0.25 +
-                                                boundingBoxScore * 0.2 +
-                                                densityScore * 0.1 +
-                                                currClusterPtr->velocityConsistencyScore * 0.25 +
+                currClusterPtr->dynamicScore = (centroidScore * 0.25f +
+                                                boundingBoxScore * 0.2f +
+                                                densityScore * 0.1f +
+                                                currClusterPtr->velocityConsistencyScore * 0.25f +
                                                 prevDynamicScore * prevDynamicWeight);
 
                 // Set isDynamic based on dynamic score threshold
-                currClusterPtr->isDynamic = currClusterPtr->dynamicScore > 0.5;
+                currClusterPtr->isDynamic = currClusterPtr->dynamicScore > 0.5f;
             } else {
                 // Default to dynamic if no EKF instance exists for this clusterID
                 currClusterPtr->isDynamic = false;
-                currClusterPtr->dynamicScore = 0.0;  // Full confidence in dynamic behavior
+                currClusterPtr->dynamicScore = 0.0f;  // Full confidence in dynamic behavior
             }
         } else {
             // Default to dynamic if previous cluster is missing
             currClusterPtr->isDynamic = false;
-            currClusterPtr->dynamicScore = 0.0;  // Full confidence in dynamic behavior
+            currClusterPtr->dynamicScore = 0.0f;  // Full confidence in dynamic behavior
         }
     }
 }

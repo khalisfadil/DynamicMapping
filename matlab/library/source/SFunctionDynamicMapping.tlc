@@ -4,13 +4,13 @@
 %%   Simulink Coder TLC Code Generation file for SFunctionDynamicMapping
 %% 
 %% Simulink version      : 23.2 (R2023b) 01-Aug-2023
-%% TLC file generated on : 19-Nov-2024 10:26:00
+%% TLC file generated on : 19-Nov-2024 15:33:39
 
 /%
      %%%-MATLAB_Construction_Commands_Start
      def = legacy_code('initialize');
      def.SFunctionName = 'SFunctionDynamicMapping';
-     def.OutputFcnSpec = 'void OutputDynamicMapping(uint32 u1, single u2[128*1024][3], single u3[128*1024][1],single u4[128*1024][1], single u5[128*1024][1],double u6[3][1], uint32 u7, double u8, double u9, double u10[3][1],double u11, uint32 u12, uint32 u13, double u14, double u15, double u16, double u17,double u18, double u19, double u20,double y1[128*1024*10][3], uint32 y2, double y3[128*1024][3], uint32 y4,int32 y5[128*1024*10][3], int32 y6[128*1024*10][3], int32 y7[128*1024*10][3],int32 y8[128*1024*10][3], int32 y9[128*1024][3])';
+     def.OutputFcnSpec = 'void OutputDynamicMapping(uint32 u1, single u2[128*1024][3], single u3[128*1024][1],single u4[128*1024][1], single u5[128*1024][1],single u6[3][1], uint32 u7, single u8, single u9, single u10[3][1],single u11, uint32 u12, uint32 u13, single u14, single u15, single u16, single u17,single u18, single u19, double u20,single y1[128*1024*5][3], uint32 y2, single y3[128*1024][3], uint32 y4,int32 y5[128*1024*5][3], int32 y6[128*1024*5][3], int32 y7[128*1024*5][3],int32 y8[128*1024*5][3], int32 y9[128*1024][3])';
      def.StartFcnSpec = 'void CreateDynamicMapping()';
      def.TerminateFcnSpec = 'void DeleteDynamicMapping()';
      def.HeaderFiles = {'dynamicMapping.hpp', 'M_occupancyMap.hpp', 'M_clusterExtractor.hpp', 'M_EKFVelocity2D.hpp', 'robin_growth_policy.h', 'robin_hash.h', 'robin_map.h', 'robin_set.h'};
@@ -144,7 +144,7 @@
         #endif
         
         extern void SFunctionDynamicMapping_wrapper_Start_%<sfunInstanceName>(void);
-        extern void SFunctionDynamicMapping_wrapper_Output_%<sfunInstanceName>(const %<uint32Type> u1, const %<singleType>* u2, const %<singleType>* u3, const %<singleType>* u4, const %<singleType>* u5, const %<doubleType>* u6, const %<uint32Type> u7, const %<doubleType> u8, const %<doubleType> u9, const %<doubleType>* u10, const %<doubleType> u11, const %<uint32Type> u12, const %<uint32Type> u13, const %<doubleType> u14, const %<doubleType> u15, const %<doubleType> u16, const %<doubleType> u17, const %<doubleType> u18, const %<doubleType> u19, const %<doubleType> u20,  %<doubleType>* y1,  %<uint32Type> y2,  %<doubleType>* y3,  %<uint32Type> y4,  %<int32Type>* y5,  %<int32Type>* y6,  %<int32Type>* y7,  %<int32Type>* y8,  %<int32Type>* y9);
+        extern void SFunctionDynamicMapping_wrapper_Output_%<sfunInstanceName>(const %<uint32Type> u1, const %<singleType>* u2, const %<singleType>* u3, const %<singleType>* u4, const %<singleType>* u5, const %<singleType>* u6, const %<uint32Type> u7, const %<singleType> u8, const %<singleType> u9, const %<singleType>* u10, const %<singleType> u11, const %<uint32Type> u12, const %<uint32Type> u13, const %<singleType> u14, const %<singleType> u15, const %<singleType> u16, const %<singleType> u17, const %<singleType> u18, const %<singleType> u19, const %<doubleType> u20,  %<singleType>* y1,  %<uint32Type> y2,  %<singleType>* y3,  %<uint32Type> y4,  %<int32Type>* y5,  %<int32Type>* y6,  %<int32Type>* y7,  %<int32Type>* y8,  %<int32Type>* y9);
         extern void SFunctionDynamicMapping_wrapper_Terminate_%<sfunInstanceName>(void);
         
         #endif
@@ -184,8 +184,8 @@
         %if IsModelReferenceSimTarget() && !::GenCPP
         extern "C" {
         %endif
-        void SFunctionDynamicMapping_wrapper_Output_%<sfunInstanceName>(const %<uint32Type> u1, const %<singleType>* u2, const %<singleType>* u3, const %<singleType>* u4, const %<singleType>* u5, const %<doubleType>* u6, const %<uint32Type> u7, const %<doubleType> u8, const %<doubleType> u9, const %<doubleType>* u10, const %<doubleType> u11, const %<uint32Type> u12, const %<uint32Type> u13, const %<doubleType> u14, const %<doubleType> u15, const %<doubleType> u16, const %<doubleType> u17, const %<doubleType> u18, const %<doubleType> u19, const %<doubleType> u20,  %<doubleType>* y1,  %<uint32Type> y2,  %<doubleType>* y3,  %<uint32Type> y4,  %<int32Type>* y5,  %<int32Type>* y6,  %<int32Type>* y7,  %<int32Type>* y8,  %<int32Type>* y9) {
-            OutputDynamicMapping((%<uint32Type>)(u1), (%<singleType>*)(u2), (%<singleType>*)(u3), (%<singleType>*)(u4), (%<singleType>*)(u5), (%<doubleType>*)(u6), (%<uint32Type>)(u7), (%<doubleType>)(u8), (%<doubleType>)(u9), (%<doubleType>*)(u10), (%<doubleType>)(u11), (%<uint32Type>)(u12), (%<uint32Type>)(u13), (%<doubleType>)(u14), (%<doubleType>)(u15), (%<doubleType>)(u16), (%<doubleType>)(u17), (%<doubleType>)(u18), (%<doubleType>)(u19), (%<doubleType>)(u20), y1, y2, y3, y4, y5, y6, y7, y8, y9);
+        void SFunctionDynamicMapping_wrapper_Output_%<sfunInstanceName>(const %<uint32Type> u1, const %<singleType>* u2, const %<singleType>* u3, const %<singleType>* u4, const %<singleType>* u5, const %<singleType>* u6, const %<uint32Type> u7, const %<singleType> u8, const %<singleType> u9, const %<singleType>* u10, const %<singleType> u11, const %<uint32Type> u12, const %<uint32Type> u13, const %<singleType> u14, const %<singleType> u15, const %<singleType> u16, const %<singleType> u17, const %<singleType> u18, const %<singleType> u19, const %<doubleType> u20,  %<singleType>* y1,  %<uint32Type> y2,  %<singleType>* y3,  %<uint32Type> y4,  %<int32Type>* y5,  %<int32Type>* y6,  %<int32Type>* y7,  %<int32Type>* y8,  %<int32Type>* y9) {
+            OutputDynamicMapping((%<uint32Type>)(u1), (%<singleType>*)(u2), (%<singleType>*)(u3), (%<singleType>*)(u4), (%<singleType>*)(u5), (%<singleType>*)(u6), (%<uint32Type>)(u7), (%<singleType>)(u8), (%<singleType>)(u9), (%<singleType>*)(u10), (%<singleType>)(u11), (%<uint32Type>)(u12), (%<uint32Type>)(u13), (%<singleType>)(u14), (%<singleType>)(u15), (%<singleType>)(u16), (%<singleType>)(u17), (%<singleType>)(u18), (%<singleType>)(u19), (%<doubleType>)(u20), y1, y2, y3, y4, y5, y6, y7, y8, y9);
         }
         %if IsModelReferenceSimTarget() && !::GenCPP
         }
@@ -233,7 +233,6 @@
 %% Function: Outputs ======================================================
 %function Outputs (block, system) Output
     %assign singleType = LibGetDataTypeNameFromId(::CompiledModel.tSS_SINGLE)
-    %assign doubleType = LibGetDataTypeNameFromId(::CompiledModel.tSS_DOUBLE)
     %if IsModelReferenceSimTarget() || CodeFormat=="S-Function" || ::isRAccel
         %assign u1_val = LibBlockInputSignal(0, "", "", 0)
         %assign u2_ptr = LibBlockInputSignalAddr(1, "", "", 0)
@@ -302,7 +301,7 @@
         %assign y8_ptr = LibBlockOutputSignalAddr(7, "", "", 0)
         %assign y9_ptr = LibBlockOutputSignalAddr(8, "", "", 0)
         %% 
-        OutputDynamicMapping(%<u1_val>, (%<singleType>*)%<u2_ptr>, (%<singleType>*)%<u3_ptr>, (%<singleType>*)%<u4_ptr>, (%<singleType>*)%<u5_ptr>, (%<doubleType>*)%<u6_ptr>, %<u7_val>, %<u8_val>, %<u9_val>, (%<doubleType>*)%<u10_ptr>, %<u11_val>, %<u12_val>, %<u13_val>, %<u14_val>, %<u15_val>, %<u16_val>, %<u17_val>, %<u18_val>, %<u19_val>, %<u20_val>, %<y1_ptr>, %<y2_val>, %<y3_ptr>, %<y4_val>, %<y5_ptr>, %<y6_ptr>, %<y7_ptr>, %<y8_ptr>, %<y9_ptr>);
+        OutputDynamicMapping(%<u1_val>, (%<singleType>*)%<u2_ptr>, (%<singleType>*)%<u3_ptr>, (%<singleType>*)%<u4_ptr>, (%<singleType>*)%<u5_ptr>, (%<singleType>*)%<u6_ptr>, %<u7_val>, %<u8_val>, %<u9_val>, (%<singleType>*)%<u10_ptr>, %<u11_val>, %<u12_val>, %<u13_val>, %<u14_val>, %<u15_val>, %<u16_val>, %<u17_val>, %<u18_val>, %<u19_val>, %<u20_val>, %<y1_ptr>, %<y2_val>, %<y3_ptr>, %<y4_val>, %<y5_ptr>, %<y6_ptr>, %<y7_ptr>, %<y8_ptr>, %<y9_ptr>);
     %endif
 %endfunction
 
