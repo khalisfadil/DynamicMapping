@@ -61,20 +61,20 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
                           double dt,                            //u20
                           float* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,       //y1 y2
                           float* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,     //y3 y4
-                          int* outputStaticOccupancyColors,                                 //y5
-                          int* outputStaticReflectivityColors,                              //y6
-                          int* outputStaticIntensityColors,                                 //y7
-                          int* outputStaticNIRColors,                                       //y8
-                          int* outputDynamicColors) {                                       //y9
+                          uint32_t* outputStaticOccupancyColors,                                 //y5
+                          uint32_t* outputStaticReflectivityColors,                              //y6
+                          uint32_t* outputStaticIntensityColors,                                 //y7
+                          uint32_t* outputStaticNIRColors,                                       //y8
+                          uint32_t* outputDynamicColors) {                                       //y9
 
     // Initialize output arrays
     std::fill(outputStaticVoxelVec, outputStaticVoxelVec + MAX_STATIC_OCCUPANCY * 3, std::numeric_limits<float>::quiet_NaN());
     std::fill(outputDynamicVoxelVec, outputDynamicVoxelVec + MAX_DYNAMIC_OCCUPANCY * 3, std::numeric_limits<float>::quiet_NaN());
-    std::fill(outputStaticOccupancyColors, outputStaticOccupancyColors + MAX_STATIC_OCCUPANCY * 3, -1);
-    std::fill(outputStaticReflectivityColors, outputStaticReflectivityColors + MAX_STATIC_OCCUPANCY * 3, -1);
-    std::fill(outputStaticIntensityColors, outputStaticIntensityColors + MAX_STATIC_OCCUPANCY * 3, -1);
-    std::fill(outputStaticNIRColors, outputStaticNIRColors + MAX_STATIC_OCCUPANCY * 3, -1);
-    std::fill(outputDynamicColors, outputDynamicColors + MAX_DYNAMIC_OCCUPANCY * 3, -1);
+    std::fill(outputStaticOccupancyColors, outputStaticOccupancyColors + MAX_STATIC_OCCUPANCY * 3, 0);
+    std::fill(outputStaticReflectivityColors, outputStaticReflectivityColors + MAX_STATIC_OCCUPANCY * 3, 0);
+    std::fill(outputStaticIntensityColors, outputStaticIntensityColors + MAX_STATIC_OCCUPANCY * 3, 0);
+    std::fill(outputStaticNIRColors, outputStaticNIRColors + MAX_STATIC_OCCUPANCY * 3, 0);
+    std::fill(outputDynamicColors, outputDynamicColors + MAX_DYNAMIC_OCCUPANCY * 3, 0);
 
     // Reset sizes
     staticVoxelVecSize = 0;

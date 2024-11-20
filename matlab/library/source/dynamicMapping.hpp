@@ -48,10 +48,10 @@ extern void OutputDynamicMapping(uint32_t numInputCloud,
                                     double dt,
                                     float* outputStaticVoxelVec, uint32_t& staticVoxelVecSize,  // Pass size by reference to update
                                     float* outputDynamicVoxelVec, uint32_t& dynamicVoxelVecSize,  // Same here for dynamic size
-                                    int* outputStaticOccupancyColors,
-                                    int* outputStaticReflectivityColors,
-                                    int* outputStaticIntensityColors,
-                                    int* outputStaticNIRColors,
-                                    int* outputDynamicColors);
+                                    uint32_t* outputStaticOccupancyColors,
+                                    uint32_t* outputStaticReflectivityColors,
+                                    uint32_t* outputStaticIntensityColors,
+                                    uint32_t* outputStaticNIRColors,
+                                    uint32_t* outputDynamicColors);
 
 extern void DeleteDynamicMapping();
