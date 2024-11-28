@@ -53,9 +53,9 @@ mexFlags = {
 % Include directories for required libraries
 includes = {
     '-I/usr/include',              ...      % General include directory
+    '-I/usr/include/eigen3'                 % Eigen library headers (often required by PCL)
     '-I/usr/include/tbb',          ...      % Intel TBB headers
     '-I/usr/include/pcl-1.12',     ...      % Point Cloud Library (PCL) headers
-    '-I/usr/include/eigen3'              % Eigen library headers (often required by PCL)
 };
 
 % Libraries and library paths
