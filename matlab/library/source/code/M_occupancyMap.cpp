@@ -242,7 +242,11 @@ void OccupancyMap::markVoxelsForClearing() {
 
         // Perform raycasting from vehiclePosition_ to voxel center
         auto raycastResult = performRaycast(vehiclePosition_, voxel.centerPosition);
-        raycastedVoxels.insert(raycastedVoxels.end(), raycastResult.begin(), raycastResult.end());
+
+        // Append results to raycastedVoxels
+        for (const auto& result : raycastResult) {
+            raycastedVoxels.push_back(result);
+        }
     });
 
     // Mark all raycasted voxels
