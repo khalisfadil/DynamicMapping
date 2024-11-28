@@ -216,28 +216,42 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
 //##############################################################################
 // Perform marking Voxels For Clearing
 void OccupancyMap::markVoxelsForClearing() {
-    // First parallel task: Mark voxels beyond the maximum reaching distance
-    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](auto& mapEntry) {
-        auto& [gridIndex, targetVoxel] = mapEntry;
+    // Step 1: Collect voxels to flag due to exceeding maximum range
+    tbb::concurrent_vector<Eigen::Vector3i> voxelsToRemove;
 
-        // Check if the voxel is beyond the maximum reaching distance
+    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](auto& mapEntry) {
+        const auto& [gridIndex, targetVoxel] = mapEntry;
+
+        // Check if the voxel exceeds the maximum range
         if ((targetVoxel.centerPosition - vehiclePosition_).norm() > reachingDistance_) {
-            targetVoxel.removalReason = RemovalReason::MaxRangeExceeded;
+            // Collect voxel indices for later update
+            voxelsToRemove.push_back(gridIndex);
         }
     });
 
-    // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
+    // Apply the removal flag sequentially
+    for (const auto& gridIndex : voxelsToRemove) {
+        occupancyMap_[gridIndex].removalReason = RemovalReason::MaxRangeExceeded;
+    }
+
+    // Step 2: Perform raycasting for all inserted voxels and collect flagged voxels
+    tbb::concurrent_vector<Eigen::Vector3i> raycastedVoxels;
+
     tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
         const auto& [gridIndex, voxel] = insertedEntry;
 
         // Perform raycasting from vehiclePosition_ to voxel center
-        for (const auto& rayVoxel : performRaycast(vehiclePosition_, voxel.centerPosition)) {
-            auto& targetVoxel = occupancyMap_[rayVoxel];
-
-            // Flag the voxel for removal due to raycasting
-            targetVoxel.removalReason = RemovalReason::Raycasting;
-        }
+        auto raycastResult = performRaycast(vehiclePosition_, voxel.centerPosition);
+        raycastedVoxels.insert(raycastedVoxels.end(), raycastResult.begin(), raycastResult.end());
     });
+
+    // Mark all raycasted voxels
+    for (const auto& gridIndex : raycastedVoxels) {
+        auto it = occupancyMap_.find(gridIndex);
+        if (it != occupancyMap_.end()) {  // Ensure the voxel exists
+            it->second.removalReason = RemovalReason::Raycasting;
+        }
+    }
 }
 //##############################################################################
 // Perform raycast to remove voxel
