@@ -89,96 +89,72 @@ void OccupancyMap::updateVoxelAverages(VoxelData& voxel) const {
 //##############################################################################
 // insert the point cloud into occupancy map
 void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointCloud,
-                                   const std::vector<float>& reflectivity,
-                                   const std::vector<float>& intensity,
-                                   const std::vector<float>& NIR) {
+                                    const std::vector<float>& reflectivity,
+                                    const std::vector<float>& intensity,
+                                    const std::vector<float>& NIR) {
     insertedVoxels_.clear();
 
-    // Use TBB parallel_reduce to handle the point cloud in parallel
-    auto localMap = tbb::parallel_reduce(
-        tbb::blocked_range<uint64_t>(0, pointCloud.size(), 1024),
-        tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual>(),
-        [&](const tbb::blocked_range<uint64_t>& range,
-            tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> localMap) {
+    // Create a thread-local map for each parallel thread
+    std::vector<tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual>> threadLocalMaps;
 
-            for (uint64_t i = range.begin(); i < range.end(); ++i) {
-                const Eigen::Vector3f& point = pointCloud[i];
-                Eigen::Vector3i gridIndex = posToGridIndex(point);
-                auto& voxel = localMap[gridIndex];
+    #pragma omp parallel
+    {
+        // Each thread gets its own local map
+        tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> localMap;
 
-                if (voxel.points.empty()) {
-                    voxel.centerPosition = gridToWorld(gridIndex);
-                }
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < pointCloud.size(); ++i) {
+            const Eigen::Vector3f& point = pointCloud[i];
+            Eigen::Vector3i gridIndex = posToGridIndex(point);
+            auto& voxel = localMap[gridIndex];
 
-                voxel.lastSeenFrame = currentFrame_;
-
-                // Add the point if voxel has space
-                if (voxel.points.size() < maxPointsPerVoxel_) {
-                    voxel.points.push_back({point, reflectivity[i], intensity[i], NIR[i]});
-                    voxel.totalReflectivity += reflectivity[i];
-                    voxel.totalIntensity += intensity[i];
-                    voxel.totalNIR += NIR[i];
-                }
+            if (voxel.points.empty()) {
+                voxel.centerPosition = gridToWorld(gridIndex);
             }
-            return localMap;
-        },
-
-        // Combine local maps into one by merging each entry
-        [](auto a, auto b) {
-            for (auto& [gridIndex, localVoxel] : b) {
-                auto& voxel = a[gridIndex];
-                if (voxel.points.empty()) {
-                    voxel = std::move(localVoxel);
-                } else {
-                    // **Change 1: Calculate pointsToAdd only once in the combine step**
-                    uint64_t availableSpace = maxPointsPerVoxel_ - voxel.points.size();
-                    uint64_t pointsToAdd = std::min(availableSpace, localVoxel.points.size());
-
-                    // Insert points from localVoxel, limiting to pointsToAdd
-                    voxel.points.insert(voxel.points.end(), localVoxel.points.begin(), 
-                                        localVoxel.points.begin() + pointsToAdd);
-
-                    // Update aggregate values only for the added points
-                    for (uint64_t i = 0; i < pointsToAdd; ++i) {
-                        voxel.totalReflectivity += localVoxel.points[i].reflectivity;
-                        voxel.totalIntensity += localVoxel.points[i].intensity;
-                        voxel.totalNIR += localVoxel.points[i].NIR;
-                    }
-                }
-            }
-            return a;
-        }
-    );
-
-    // Final merge from localMap into the main occupancy map and track inserted voxels
-    for (auto& [gridIndex, localVoxel] : localMap) {
-        auto& voxel = occupancyMap_[gridIndex];
-
-        if (voxel.points.empty()) {
-            voxel = std::move(localVoxel);
-        } else {
-            // **Change 2: Calculate pointsToAdd only once in the final merge**
-            uint64_t availableSpace = maxPointsPerVoxel_ - voxel.points.size();
-            uint64_t pointsToAdd = std::min(availableSpace, localVoxel.points.size());
 
             voxel.lastSeenFrame = currentFrame_;
-            // Insert points from localVoxel, limiting to pointsToAdd
-            voxel.points.insert(voxel.points.end(), localVoxel.points.begin(), 
-                                localVoxel.points.begin() + pointsToAdd);
 
-            // Update aggregate values only for the added points
-            for (uint64_t i = 0; i < pointsToAdd; ++i) {
-                voxel.totalReflectivity += localVoxel.points[i].reflectivity;
-                voxel.totalIntensity += localVoxel.points[i].intensity;
-                voxel.totalNIR += localVoxel.points[i].NIR;
+            // Add the point if voxel has space
+            if (voxel.points.size() < maxPointsPerVoxel_) {
+                voxel.points.push_back({point, reflectivity[i], intensity[i], NIR[i]});
+                voxel.totalReflectivity += reflectivity[i];
+                voxel.totalIntensity += intensity[i];
+                voxel.totalNIR += NIR[i];
             }
         }
 
-        // Update average values after merging
-        updateVoxelAverages(voxel);
+        // Append the local map to the thread-local map vector
+        #pragma omp critical
+        {
+            threadLocalMaps.push_back(std::move(localMap));
+        }
+    }
 
-        // Track this voxel’s gridIndex in insertedVoxels_ for the current frame
-        insertedVoxels_[gridIndex] = voxel;
+    // Merge thread-local maps into the global occupancy map
+    for (auto& localMap : threadLocalMaps) {
+        for (auto& [gridIndex, localVoxel] : localMap) {
+            auto& voxel = occupancyMap_[gridIndex];
+
+            if (voxel.points.empty()) {
+                voxel = std::move(localVoxel);
+            } else {
+                uint64_t availableSpace = maxPointsPerVoxel_ - voxel.points.size();
+                uint64_t pointsToAdd = std::min(availableSpace, localVoxel.points.size());
+
+                voxel.lastSeenFrame = currentFrame_;
+                voxel.points.insert(voxel.points.end(), localVoxel.points.begin(), 
+                                    localVoxel.points.begin() + pointsToAdd);
+
+                for (uint64_t i = 0; i < pointsToAdd; ++i) {
+                    voxel.totalReflectivity += localVoxel.points[i].reflectivity;
+                    voxel.totalIntensity += localVoxel.points[i].intensity;
+                    voxel.totalNIR += localVoxel.points[i].NIR;
+                }
+            }
+
+            updateVoxelAverages(voxel);
+            insertedVoxels_[gridIndex] = voxel;
+        }
     }
 }
 //##############################################################################
@@ -191,17 +167,25 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
     if ((end - start).squaredNorm() < closeThreshold * closeThreshold) {
         return { posToGridIndex(start) };
     }
-    // Precompute values for the loop to avoid recalculating in each iteration
+
+    // Calculate direction and distance
     Eigen::Vector3f direction = (end - start).normalized();
     float distance = (end - start).norm();
+
+    // Safeguard against invalid distance
+    if (distance <= 0) {
+        return { posToGridIndex(start) };
+    }
+
     // Initialize voxel collection
     tsl::robin_set<Eigen::Vector3i, Vector3iHash, Vector3iEqual> uniqueVoxels;
     Eigen::Vector3i lastVoxelIndex = posToGridIndex(start);
     uniqueVoxels.insert(lastVoxelIndex);
+
     // Use a single position variable and avoid unnecessary recalculations in each step
     Eigen::Vector3f currentPos = start;
     for (float step = mapRes_; step < distance; step += mapRes_) {
-        currentPos += direction * mapRes_;
+        currentPos = start + direction * step;
         Eigen::Vector3i voxelIndex = posToGridIndex(currentPos);
 
         // Insert only if the voxel index changes
@@ -210,34 +194,85 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
             lastVoxelIndex = voxelIndex;
         }
     }
+
+    // Add the final voxel index explicitly
+    Eigen::Vector3i finalVoxelIndex = posToGridIndex(end);
+    if (finalVoxelIndex != lastVoxelIndex) {
+        uniqueVoxels.insert(finalVoxelIndex);
+    }
+
     // Return unique voxels as a vector
     return std::vector<Eigen::Vector3i>(uniqueVoxels.begin(), uniqueVoxels.end());
 }
 //##############################################################################
-// Perform marking Voxels For Clearing
+// Perform raycast to remove voxel
 void OccupancyMap::markVoxelsForClearing() {
-    // First parallel task: Mark voxels beyond the maximum reaching distance
-    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](auto& mapEntry) {
-        auto& [gridIndex, targetVoxel] = mapEntry;
+    // Step 1: Collect voxels to flag due to exceeding maximum range
+    std::vector<Eigen::Vector3i> farVoxels;
 
-        // Check if the voxel is beyond the maximum reaching distance
-        if ((targetVoxel.centerPosition - vehiclePosition_).norm() > reachingDistance_) {
-            targetVoxel.removalReason = RemovalReason::MaxRangeExceeded;
+    #pragma omp parallel
+    {
+        std::vector<Eigen::Vector3i> localFarVoxels;
+
+        // Use an index-based loop instead of iterator for compatibility
+        #pragma omp for schedule(static)
+        for (size_t idx = 0; idx < occupancyMap_.size(); ++idx) {
+            auto it = std::next(occupancyMap_.begin(), idx);
+            const auto& targetVoxel = it->second;
+
+            // Check if the voxel exceeds the maximum range
+            if ((targetVoxel.centerPosition - vehiclePosition_).norm() > reachingDistance_) {
+                localFarVoxels.push_back(it->first);  // Directly use the key
+            }
         }
-    });
 
-    // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
-    tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
-        const auto& [gridIndex, voxel] = insertedEntry;
+        // Combine thread-local results safely
+        #pragma omp critical
+        farVoxels.insert(farVoxels.end(), localFarVoxels.begin(), localFarVoxels.end());
+    }
 
-        // Perform raycasting from vehiclePosition_ to voxel center
-        for (const auto& rayVoxel : performRaycast(vehiclePosition_, voxel.centerPosition)) {
-            auto& targetVoxel = occupancyMap_[rayVoxel];
-
-            // Flag the voxel for removal due to raycasting
-            targetVoxel.removalReason = RemovalReason::Raycasting;
+    // Apply the removal flag sequentially
+    for (const auto& gridIndex : farVoxels) {
+        auto it = occupancyMap_.find(gridIndex);
+        if (it != occupancyMap_.end()) {
+            it->second.removalReason = RemovalReason::MaxRangeExceeded;
         }
-    });
+    }
+
+    // Step 2: Perform raycasting for all inserted voxels and collect flagged voxels
+    std::vector<Eigen::Vector3i> raycastedVoxels;
+
+    #pragma omp parallel
+    {
+        std::vector<Eigen::Vector3i> localRaycastedVoxels;
+
+        // Use an index-based loop instead of iterator for compatibility
+        #pragma omp for schedule(static)
+        for (size_t idx = 0; idx < insertedVoxels_.size(); ++idx) {
+            auto it = std::next(insertedVoxels_.begin(), idx);
+            const auto& voxel = it->second;
+
+            // Perform raycasting from vehiclePosition_ to voxel center
+            auto raycastResult = performRaycast(vehiclePosition_, voxel.centerPosition);
+
+            // Append results to thread-local collection
+            localRaycastedVoxels.insert(localRaycastedVoxels.end(),
+                                        raycastResult.begin(),
+                                        raycastResult.end());
+        }
+
+        // Combine thread-local results safely
+        #pragma omp critical
+        raycastedVoxels.insert(raycastedVoxels.end(), localRaycastedVoxels.begin(), localRaycastedVoxels.end());
+    }
+
+    // Mark all raycasted voxels
+    for (const auto& gridIndex : raycastedVoxels) {
+        auto it = occupancyMap_.find(gridIndex);
+        if (it != occupancyMap_.end()) {  // Ensure the voxel exists
+            it->second.removalReason = RemovalReason::Raycasting;
+        }
+    }
 }
 //##############################################################################
 // Perform raycast to remove voxel
@@ -245,68 +280,153 @@ void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWi
     // Step 1: Collect unique grid indices from the dynamic point cloud
     tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> insertedDynamicVoxels_;
 
-    for (const auto& point : dynamicCloud) {
-        Eigen::Vector3i gridIndex = posToGridIndex(point.position);
-        insertedDynamicVoxels_[gridIndex] = {};
+    #pragma omp parallel
+    {
+        tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> localDynamicVoxels;
+
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < dynamicCloud.size(); ++i) {
+            Eigen::Vector3i gridIndex = posToGridIndex(dynamicCloud[i].position);
+            localDynamicVoxels[gridIndex] = {};
+        }
+
+        // Merge thread-local maps into the global map
+        #pragma omp critical
+        {
+            for (const auto& [gridIndex, voxel] : localDynamicVoxels) {
+                insertedDynamicVoxels_[gridIndex] = voxel;
+            }
+        }
     }
 
-    // Step 2: Mark corresponding voxels in occupancyMap_ as dynamic if they exist
-    for (const auto& [gridIndex, voxel] : insertedDynamicVoxels_) {
-        if (occupancyMap_.find(gridIndex) != occupancyMap_.end()) { // Ensure voxel exists
-            auto& targetVoxel = occupancyMap_[gridIndex];
-            targetVoxel.isDynamic = true;
-            targetVoxel.removalReason = RemovalReason::Dynamic;
+    // Step 2: Collect grid indices of dynamic voxels in a thread-safe manner
+    std::vector<Eigen::Vector3i> dynamicVoxelIndices;
+
+    #pragma omp parallel
+    {
+        std::vector<Eigen::Vector3i> localDynamicVoxelIndices;
+
+        #pragma omp for schedule(static)
+        for (size_t i = 0; i < dynamicCloud.size(); ++i) {
+            Eigen::Vector3i gridIndex = posToGridIndex(dynamicCloud[i].position);
+
+            auto mapIt = occupancyMap_.find(gridIndex);
+            if (mapIt != occupancyMap_.end()) {
+                localDynamicVoxelIndices.push_back(gridIndex);
+            }
+        }
+
+        // Merge thread-local indices into the global list
+        #pragma omp critical
+        dynamicVoxelIndices.insert(dynamicVoxelIndices.end(), localDynamicVoxelIndices.begin(), localDynamicVoxelIndices.end());
+    }
+
+    // Step 3: Mark the collected grid indices as dynamic in occupancyMap_
+    for (const auto& gridIndex : dynamicVoxelIndices) {
+        auto mapIt = occupancyMap_.find(gridIndex);
+        if (mapIt != occupancyMap_.end()) {
+            mapIt->second.isDynamic = true;
+            mapIt->second.removalReason = RemovalReason::Dynamic;
         }
     }
 }
+
 //##############################################################################
 // Perform pruning voxel
 void OccupancyMap::removeFlaggedVoxels() {
-    for (auto it = occupancyMap_.begin(); it != occupancyMap_.end();) {
-        // Use conditional operator to choose between erase and increment
-        it = (it->second.removalReason != RemovalReason::None) 
-            ? occupancyMap_.erase(it) 
-            : std::next(it);
+    // Step 1: Collect flagged keys in parallel
+    std::vector<Eigen::Vector3i> flaggedKeys;
+
+    #pragma omp parallel
+    {
+        // Thread-local storage for flagged keys
+        std::vector<Eigen::Vector3i> localFlaggedKeys;
+
+        #pragma omp for schedule(static)
+        for (size_t idx = 0; idx < occupancyMap_.size(); ++idx) {
+            auto it = std::next(occupancyMap_.begin(), idx);
+            if (it->second.removalReason != RemovalReason::None) {
+                localFlaggedKeys.push_back(it->first);
+            }
+        }
+
+        // Combine thread-local results into the global list
+        #pragma omp critical
+        {
+            flaggedKeys.insert(flaggedKeys.end(), localFlaggedKeys.begin(), localFlaggedKeys.end());
+        }
+    }
+
+    // Step 2: Remove flagged keys sequentially
+    for (const auto& key : flaggedKeys) {
+        occupancyMap_.erase(key);
     }
 }
 //##############################################################################
 // getDynamicVoxels
 std::vector<OccupancyMap::VoxelData> OccupancyMap::getDynamicVoxels() const {
+    if (occupancyMap_.empty()) {
+        return {};  // Return an empty vector if the map is empty
+    }
+
+    // Parallel reduction for dynamic voxels
     std::vector<VoxelData> dynamicVoxels;
-    dynamicVoxels.reserve(occupancyMap_.size());  // Estimate 10% of voxels are dynamic
 
-    // Use a concurrent vector if TBB is available for parallel processing
-    tbb::concurrent_vector<VoxelData> concurrentDynamicVoxels;
+    #pragma omp parallel
+    {
+        // Thread-local storage for dynamic voxels
+        std::vector<VoxelData> localDynamicVoxels;
 
-    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& entry) {
-        const auto& voxel = entry.second;
-        if (voxel.isDynamic) {
-            concurrentDynamicVoxels.push_back(voxel);
+        #pragma omp for schedule(static)
+        for (size_t idx = 0; idx < occupancyMap_.size(); ++idx) {
+            auto it = std::next(occupancyMap_.begin(), idx);  // Safe iterator access
+            const auto& voxel = it->second;
+            if (voxel.isDynamic) {
+                localDynamicVoxels.push_back(voxel);
+            }
         }
-    });
 
-    // Convert concurrent vector to standard vector for output
-    dynamicVoxels.assign(concurrentDynamicVoxels.begin(), concurrentDynamicVoxels.end());
+        // Combine thread-local results into the global list
+        #pragma omp critical
+        {
+            dynamicVoxels.insert(dynamicVoxels.end(), localDynamicVoxels.begin(), localDynamicVoxels.end());
+        }
+    }
+
     return dynamicVoxels;
 }
 //##############################################################################
 // getStaticVoxels
 std::vector<OccupancyMap::VoxelData> OccupancyMap::getStaticVoxels() const {
+    // Return an empty vector if occupancyMap_ is empty
+    if (occupancyMap_.empty()) {
+        return {};  // Return an empty vector
+    }
+
+    // Parallel reduction for static voxels
     std::vector<VoxelData> staticVoxels;
-    staticVoxels.reserve(occupancyMap_.size());
 
-    // Use a concurrent vector to allow parallel writes without locks
-    tbb::concurrent_vector<VoxelData> concurrentStaticVoxels;
+    #pragma omp parallel
+    {
+        // Thread-local storage for static voxels
+        std::vector<VoxelData> localStaticVoxels;
 
-    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& entry) {
-        const auto& voxel = entry.second;
-        if (!voxel.isDynamic) {
-            concurrentStaticVoxels.push_back(voxel);
+        #pragma omp for schedule(static)
+        for (size_t idx = 0; idx < occupancyMap_.size(); ++idx) {
+            auto it = std::next(occupancyMap_.begin(), idx);  // Safe iterator advancement
+            const auto& voxel = it->second;
+            if (!voxel.isDynamic) {
+                localStaticVoxels.push_back(voxel);
+            }
         }
-    });
 
-    // Convert concurrent vector to standard vector for output
-    staticVoxels.assign(concurrentStaticVoxels.begin(), concurrentStaticVoxels.end());
+        // Merge thread-local results into the global list
+        #pragma omp critical
+        {
+            staticVoxels.insert(staticVoxels.end(), localStaticVoxels.begin(), localStaticVoxels.end());
+        }
+    }
+
     return staticVoxels;
 }
 //##############################################################################
@@ -370,6 +490,7 @@ OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& vox
     if (voxels.empty()) {
         return {{}, {}, {}, {}};  // Return empty vectors if no data
     }
+
     // Initialize color vectors for each characteristic with reserved space
     std::vector<Eigen::Vector3i> occupancyColors(voxels.size());
     std::vector<Eigen::Vector3i> reflectivityColors(voxels.size());
@@ -377,14 +498,15 @@ OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& vox
     std::vector<Eigen::Vector3i> NIRColors(voxels.size());
 
     // Parallel processing to compute colors for each voxel
-    tbb::parallel_for(uint64_t(0), voxels.size(), [&](uint64_t i) {
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < voxels.size(); ++i) {
         const VoxelData& voxel = voxels[i];
         // Calculate each characteristic color for the voxel
         occupancyColors[i] = calculateOccupancyColor(voxel);
         reflectivityColors[i] = calculateReflectivityColor(voxel.avgReflectivity);
         intensityColors[i] = calculateIntensityColor(voxel.avgIntensity);
         NIRColors[i] = calculateNIRColor(voxel.avgNIR);
-    });
+    }
 
     // Return all color vectors as a tuple
     return std::make_tuple(occupancyColors, reflectivityColors, intensityColors, NIRColors);
@@ -392,6 +514,9 @@ OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& vox
 //##############################################################################
 // Assign all voxels a red color
 std::vector<Eigen::Vector3i> OccupancyMap::assignVoxelColorsRed(const std::vector<OccupancyMap::VoxelData>& voxels) {
+    if (voxels.empty()) {
+        return {};  // Return empty vectors if no data
+    }
     std::vector<Eigen::Vector3i> colors;
     colors.assign(voxels.size(), Eigen::Vector3i(255, 0, 0));  // Direct assignment of red color to all entries
     return colors;

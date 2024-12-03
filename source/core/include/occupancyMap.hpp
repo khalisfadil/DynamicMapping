@@ -55,7 +55,7 @@ class OccupancyMap {
             float avgIntensity = 0.0f;
             float avgNIR = 0.0f;
             uint32_t lastSeenFrame = 0;       // Last frame this voxel was updated
-            bool isDynamic = false;       // Flag indicating dynamic status
+            mutable bool isDynamic = false;       // Flag indicating dynamic status
             mutable RemovalReason removalReason = RemovalReason::None;  // Reason for voxel removal
 
             // Default constructor initializes all members

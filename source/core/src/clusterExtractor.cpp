@@ -19,6 +19,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+
 #include "clusterExtractor.hpp"
 
 //##############################################################################
@@ -87,14 +88,13 @@ void ClusterExtractor::extractClusters(const std::vector<Eigen::Vector3f>& point
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
     cloud->points.resize(pointCloud.size());
 
-    // Use tbb::parallel_for to populate the PCL PointCloud
-    tbb::parallel_for(tbb::blocked_range<uint64_t>(0, pointCloud.size()), [&](const tbb::blocked_range<uint64_t>& range) {
-        for (uint64_t i = range.begin(); i < range.end(); ++i) {
-            cloud->points[i].x = pointCloud[i].x();
-            cloud->points[i].y = pointCloud[i].y();
-            cloud->points[i].z = pointCloud[i].z();
-        }
-    });
+    // Populate the PCL PointCloud using OpenMP
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < pointCloud.size(); ++i) {
+        cloud->points[i].x = pointCloud[i].x();
+        cloud->points[i].y = pointCloud[i].y();
+        cloud->points[i].z = pointCloud[i].z();
+    }
 
     // Setup KdTree and EuclideanClusterExtraction
     pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
@@ -110,26 +110,27 @@ void ClusterExtractor::extractClusters(const std::vector<Eigen::Vector3f>& point
     std::vector<pcl::PointIndices> clusterIndices;
     ec.extract(clusterIndices);
 
-    // Convert clustered indices back to clusters with attributes in parallel
+    // Resize the clusters vector
     clusters_.resize(clusterIndices.size());
-    tbb::parallel_for(tbb::blocked_range<uint64_t>(0, clusterIndices.size()), [&](const tbb::blocked_range<uint64_t>& range) {
-        for (uint64_t i = range.begin(); i < range.end(); ++i) {
-            const auto& indices = clusterIndices[i];
-            std::vector<PointWithAttributes>& cluster = clusters_[i];
-            cluster.reserve(indices.indices.size());
 
-            for (int index : indices.indices) {
-                Eigen::Vector3f position(cloud->points[index].x, cloud->points[index].y, cloud->points[index].z);
-                PointWithAttributes pointWithAttr = {
-                    position,
-                    reflectivity[index],  // Use the corresponding reflectivity value
-                    intensity[index],     // Use the corresponding intensity value
-                    NIR[index]            // Use the corresponding NIR value
-                };
-                cluster.push_back(pointWithAttr);
-            }
+    // Convert clustered indices back to clusters with attributes using OpenMP
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < clusterIndices.size(); ++i) {
+        const auto& indices = clusterIndices[i];
+        std::vector<PointWithAttributes>& cluster = clusters_[i];
+        cluster.reserve(indices.indices.size());
+
+        for (int index : indices.indices) {
+            Eigen::Vector3f position(cloud->points[index].x, cloud->points[index].y, cloud->points[index].z);
+            PointWithAttributes pointWithAttr = {
+                position,
+                reflectivity[index],  // Use the corresponding reflectivity value
+                intensity[index],     // Use the corresponding intensity value
+                NIR[index]            // Use the corresponding NIR value
+            };
+            cluster.push_back(pointWithAttr);
         }
-    });
+    }
 }
 //##############################################################################
 // Function to calculate properties of each cluster (centroid, bounding box, etc.)
@@ -137,66 +138,65 @@ void ClusterExtractor::calculateClusterProperties() {
     // Resize propertiesList_ to match the number of clusters, allowing direct index access
     propertiesList_.resize(clusters_.size());
 
-    // Use TBB to parallelize the calculation for each cluster
-    tbb::parallel_for(tbb::blocked_range<uint64_t>(0, clusters_.size()), [&](const tbb::blocked_range<uint64_t>& range) {
-        for (uint64_t i = range.begin(); i < range.end(); ++i) {
-            const auto& cluster = clusters_[i];
+    // Use OpenMP to parallelize the calculation for each cluster
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < clusters_.size(); ++i) {
+        const auto& cluster = clusters_[i];
 
-            // Check for empty clusters
-            if (cluster.empty()) {
-                continue;
-            }
-
-            ClusterProperties properties;
-
-            properties.data = cluster; // include all point inside the properties.
-
-            Eigen::Vector3f sum(0, 0, 0);
-            Eigen::Vector3f minBound = cluster[0].position;
-            Eigen::Vector3f maxBound = cluster[0].position;
-
-            float totalReflectivity = 0.0f;
-            float totalIntensity = 0.0f;
-            float totalNIR = 0.0f;
-
-            for (const auto& point : cluster) {
-                // Update centroid sum and bounding box
-                sum += point.position;
-                minBound = minBound.cwiseMin(point.position);
-                maxBound = maxBound.cwiseMax(point.position);
-
-                // Accumulate attribute values
-                totalReflectivity += point.reflectivity;
-                totalIntensity += point.intensity;
-                totalNIR += point.NIR;
-            }
-
-            // Calculate final properties for this cluster
-            properties.centroid = sum / cluster.size();
-            properties.boundingBoxMin = minBound;
-            properties.boundingBoxMax = maxBound;
-            properties.pointCount = cluster.size();
-
-            // Calculate averages for reflectivity, intensity, and NIR
-            properties.avgReflectivity = totalReflectivity / cluster.size();
-            properties.avgIntensity = totalIntensity / cluster.size();
-            properties.avgNIR = totalNIR / cluster.size();
-
-            // Calculate the bounding box volume for 3D (or area for 2D)
-            float volume = (maxBound.x() - minBound.x()) *
-                            (maxBound.y() - minBound.y()) *
-                            (maxBound.z() - minBound.z());
-            
-            // Ensure the volume is positive to avoid division by zero
-            volume = std::max(volume, 1e-6f);
-
-            // Calculate density as the ratio of point count to volume
-            properties.density = cluster.size() / volume;
-
-            // Directly assign computed properties to propertiesList_ at index i
-            propertiesList_[i] = std::move(properties);
+        // Check for empty clusters
+        if (cluster.empty()) {
+            continue;
         }
-    });
+
+        ClusterProperties properties;
+
+        properties.data = cluster; // Include all points inside the properties.
+
+        Eigen::Vector3f sum(0, 0, 0);
+        Eigen::Vector3f minBound = cluster[0].position;
+        Eigen::Vector3f maxBound = cluster[0].position;
+
+        float totalReflectivity = 0.0f;
+        float totalIntensity = 0.0f;
+        float totalNIR = 0.0f;
+
+        for (const auto& point : cluster) {
+            // Update centroid sum and bounding box
+            sum += point.position;
+            minBound = minBound.cwiseMin(point.position);
+            maxBound = maxBound.cwiseMax(point.position);
+
+            // Accumulate attribute values
+            totalReflectivity += point.reflectivity;
+            totalIntensity += point.intensity;
+            totalNIR += point.NIR;
+        }
+
+        // Calculate final properties for this cluster
+        properties.centroid = sum / cluster.size();
+        properties.boundingBoxMin = minBound;
+        properties.boundingBoxMax = maxBound;
+        properties.pointCount = cluster.size();
+
+        // Calculate averages for reflectivity, intensity, and NIR
+        properties.avgReflectivity = totalReflectivity / cluster.size();
+        properties.avgIntensity = totalIntensity / cluster.size();
+        properties.avgNIR = totalNIR / cluster.size();
+
+        // Calculate the bounding box volume for 3D (or area for 2D)
+        float volume = (maxBound.x() - minBound.x()) *
+                       (maxBound.y() - minBound.y()) *
+                       (maxBound.z() - minBound.z());
+
+        // Ensure the volume is positive to avoid division by zero
+        volume = std::max(volume, 1e-6f);
+
+        // Calculate density as the ratio of point count to volume
+        properties.density = cluster.size() / volume;
+
+        // Assign computed properties to propertiesList_ at index i
+        propertiesList_[i] = std::move(properties);
+    }
 }
 //##############################################################################
 // Function to calculate bounding box overlap score
@@ -252,14 +252,20 @@ void ClusterExtractor::associateClusters() {
         return;  // No clusters to associate
     }
 
-    tbb::concurrent_bounded_queue<std::tuple<float, int, int>> scoreQueue;
+    // Step 1: Prepare a thread-safe queue for similarity scores
+    std::vector<std::tuple<float, int, int>> scoreQueue;
 
     // Clear persistent associations for the current frame
     persistentAssociations_.clear();
 
     // Step 2: Parallel loop for computing similarity scores
-    tbb::parallel_for(tbb::blocked_range<uint64_t>(0, propertiesList_.size()), [&](const tbb::blocked_range<uint64_t>& range) {
-        for (uint64_t i = range.begin(); i < range.end(); ++i) {
+    #pragma omp parallel
+    {
+        // Thread-local storage for scores to avoid race conditions
+        std::vector<std::tuple<float, int, int>> localScoreQueue;
+
+        #pragma omp for schedule(dynamic)
+        for (size_t i = 0; i < propertiesList_.size(); ++i) {
             auto& currCluster = propertiesList_[i];
 
             // Compare with clusters from the previous 5 frames
@@ -271,19 +277,27 @@ void ClusterExtractor::associateClusters() {
                     float similarityScore = calculateSimilarityScore(currCluster, prevCluster);
 
                     if (similarityScore > similarityThreshold_) {
-                        scoreQueue.push(std::make_tuple(similarityScore, prevID, static_cast<int>(i)));
+                        localScoreQueue.emplace_back(similarityScore, prevID, static_cast<int>(i));
                     }
                 }
             }
         }
-    });
+
+        // Merge local scores into the global score queue
+        #pragma omp critical
+        scoreQueue.insert(scoreQueue.end(), localScoreQueue.begin(), localScoreQueue.end());
+    }
 
     // Step 3: Match clusters based on similarity scores
-    tbb::concurrent_unordered_map<int, bool> matchedPrevClusters;
-    tbb::concurrent_unordered_map<int, bool> matchedCurrClusters;
+    std::unordered_map<int, bool> matchedPrevClusters;
+    std::unordered_map<int, bool> matchedCurrClusters;
 
-    std::tuple<float, int, int> item;
-    while (scoreQueue.try_pop(item)) {
+    // Sort scores by similarity in descending order to prioritize the best matches
+    std::sort(scoreQueue.begin(), scoreQueue.end(), [](const auto& a, const auto& b) {
+        return std::get<0>(a) > std::get<0>(b);  // Compare by similarityScore
+    });
+
+    for (const auto& item : scoreQueue) {
         auto [similarityScore, prevID, currIdx] = item;
 
         if (!matchedPrevClusters[prevID] && !matchedCurrClusters[currIdx]) {
@@ -307,8 +321,10 @@ void ClusterExtractor::associateClusters() {
     }
 
     // Step 4: Assign new IDs to unmatched clusters
-    for (uint64_t i = 0; i < propertiesList_.size(); ++i) {
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < propertiesList_.size(); ++i) {
         if (!matchedCurrClusters[static_cast<int>(i)]) {
+            #pragma omp critical
             propertiesList_[i].clusterID = newClusterID++;  // Increment persistent ID and assign to unmatched clusters
         }
     }
@@ -504,8 +520,6 @@ std::vector<ClusterExtractor::PointWithAttributes> ClusterExtractor::getDynamicC
 
     return dynamicPoints;  // Return the list of points from dynamic clusters
 }
-
-
 
 
 

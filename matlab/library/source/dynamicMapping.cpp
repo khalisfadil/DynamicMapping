@@ -21,11 +21,7 @@
 // SOFTWARE.
 
 #include "dynamicMapping.hpp"
-#include <iostream>
-#include <limits>
-#include <memory>
-#include <tbb/blocked_range.h>
-#include <tbb/parallel_for.h>
+
 
 // Persistent pointers to manage the instances of OccupancyMap and ClusterExtractor
 static std::unique_ptr<OccupancyMap> occupancyMapInstance = nullptr;
@@ -101,16 +97,15 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
     std::vector<float> intensityVec(numInputCloud);
     std::vector<float> NIRVec(numInputCloud);
 
-    // Use TBB parallel_for to populate the vectors in parallel
-    tbb::parallel_for(tbb::blocked_range<uint32_t>(0, numInputCloud),
-        [&](const tbb::blocked_range<uint32_t>& range) {
-            for (uint32_t i = range.begin(); i < range.end(); ++i) {
-                pointCloud[i] = Eigen::Vector3f(inputCloud[i * 3], inputCloud[i * 3 + 1], inputCloud[i * 3 + 2]);
-                reflectivityVec[i] = reflectivity[i];
-                intensityVec[i] = intensity[i];
-                NIRVec[i] = NIR[i];
-            }
-        });
+    // Use OpenMP parallel for to populate the vectors in parallel
+    #pragma omp parallel for schedule(static)
+    for (uint32_t i = 0; i < numInputCloud; ++i) {
+        pointCloud[i] = Eigen::Vector3f(inputCloud[i * 3], inputCloud[i * 3 + 1], inputCloud[i * 3 + 2]);
+        reflectivityVec[i] = reflectivity[i];
+        intensityVec[i] = intensity[i];
+        NIRVec[i] = NIR[i];
+    }
+
 
     if (pointCloud.empty()) {
         std::cerr << "[ERROR] PointCloud is empty. Exiting processing." << std::endl;
@@ -135,26 +130,26 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
         const auto& NIRColors = std::get<3>(voxelColors);
 
         // Fill output vectors for static voxels
-        tbb::parallel_for(tbb::blocked_range<uint32_t>(0, staticVoxelVecSize),
-            [&](const tbb::blocked_range<uint32_t>& range) {
-                for (uint32_t i = range.begin(); i < range.end(); ++i) {
-                    outputStaticVoxelVec[i] = staticVoxelVec[i].x();
-                    outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY] = staticVoxelVec[i].y();
-                    outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY * 2] = staticVoxelVec[i].z();
-                    outputStaticOccupancyColors[i] = occupancyColors[i].x();
-                    outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY] = occupancyColors[i].y();
-                    outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY * 2] = occupancyColors[i].z();
-                    outputStaticReflectivityColors[i] = reflectivityColors[i].x();
-                    outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY] = reflectivityColors[i].y();
-                    outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY * 2] = reflectivityColors[i].z();
-                    outputStaticIntensityColors[i] = intensityColors[i].x();
-                    outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY] = intensityColors[i].y();
-                    outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY * 2] = intensityColors[i].z();
-                    outputStaticNIRColors[i] = NIRColors[i].x();
-                    outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY] = NIRColors[i].y();
-                    outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY * 2] = NIRColors[i].z();
-                }
-            });
+        // Fill output vectors for static voxels using OpenMP
+        #pragma omp parallel for schedule(static)
+        for (uint32_t i = 0; i < staticVoxelVecSize; ++i) {
+            outputStaticVoxelVec[i] = staticVoxelVec[i].x();
+            outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY] = staticVoxelVec[i].y();
+            outputStaticVoxelVec[i + MAX_STATIC_OCCUPANCY * 2] = staticVoxelVec[i].z();
+            outputStaticOccupancyColors[i] = occupancyColors[i].x();
+            outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY] = occupancyColors[i].y();
+            outputStaticOccupancyColors[i + MAX_STATIC_OCCUPANCY * 2] = occupancyColors[i].z();
+            outputStaticReflectivityColors[i] = reflectivityColors[i].x();
+            outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY] = reflectivityColors[i].y();
+            outputStaticReflectivityColors[i + MAX_STATIC_OCCUPANCY * 2] = reflectivityColors[i].z();
+            outputStaticIntensityColors[i] = intensityColors[i].x();
+            outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY] = intensityColors[i].y();
+            outputStaticIntensityColors[i + MAX_STATIC_OCCUPANCY * 2] = intensityColors[i].z();
+            outputStaticNIRColors[i] = NIRColors[i].x();
+            outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY] = NIRColors[i].y();
+            outputStaticNIRColors[i + MAX_STATIC_OCCUPANCY * 2] = NIRColors[i].z();
+        }
+
     }
 
     // Process dynamic voxels
@@ -164,18 +159,16 @@ void OutputDynamicMapping(uint32_t numInputCloud,               //u1
         dynamicVoxelVecSize = std::min(static_cast<uint32_t>(dynamicVoxelVec.size()), MAX_DYNAMIC_OCCUPANCY);
         std::vector<Eigen::Vector3i> dynamicVoxelColor = occupancyMapInstance->assignVoxelColorsRed(dynamicVoxel);
 
-        // Fill output vectors for dynamic voxels
-        tbb::parallel_for(tbb::blocked_range<uint32_t>(0, dynamicVoxelVecSize),
-            [&](const tbb::blocked_range<uint32_t>& range) {
-                for (uint32_t i = range.begin(); i < range.end(); ++i) {
-                    outputDynamicVoxelVec[i] = dynamicVoxelVec[i].x();
-                    outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelVec[i].y();
-                    outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelVec[i].z();
-                    outputDynamicColors[i] = dynamicVoxelColor[i].x();
-                    outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelColor[i].y();
-                    outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelColor[i].z();
-                }
-            });
+        // Fill output vectors for dynamic voxels using OpenMP
+        #pragma omp parallel for schedule(static)
+        for (uint32_t i = 0; i < dynamicVoxelVecSize; ++i) {
+            outputDynamicVoxelVec[i] = dynamicVoxelVec[i].x();
+            outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelVec[i].y();
+            outputDynamicVoxelVec[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelVec[i].z();
+            outputDynamicColors[i] = dynamicVoxelColor[i].x();
+            outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY] = dynamicVoxelColor[i].y();
+            outputDynamicColors[i + MAX_DYNAMIC_OCCUPANCY * 2] = dynamicVoxelColor[i].z();
+        }
     }
 }
 

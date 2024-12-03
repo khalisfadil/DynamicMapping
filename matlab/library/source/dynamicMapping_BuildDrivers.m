@@ -8,7 +8,6 @@ thisDirectory = pwd;
 
 % Define paths for 'code' and 'code/tsl' within the current directory or relative to current directory structure
 directorySourceCode = fullfile(thisDirectory, 'code');
-directorySourceTsl = fullfile(thisDirectory, 'code', 'tsl');
 
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 % Driver: Dynamic Mapping
@@ -27,8 +26,8 @@ def.OutputFcnSpec                   = ['void OutputDynamicMapping(uint32 u1, sin
 def.TerminateFcnSpec                = 'void DeleteDynamicMapping()';
 def.HeaderFiles                     = {'dynamicMapping.hpp', 'M_occupancyMap.hpp', 'M_clusterExtractor.hpp', 'M_EKFVelocity2D.hpp', 'robin_growth_policy.h', 'robin_hash.h', 'robin_map.h', 'robin_set.h'};
 def.SourceFiles                     = {'dynamicMapping.cpp', 'M_occupancyMap.cpp', 'M_clusterExtractor.cpp', 'M_EKFVelocity2D.cpp'};
-def.IncPaths                        = {directorySourceCode, directorySourceTsl};  
-def.SrcPaths                        = {directorySourceCode, directorySourceTsl};
+def.IncPaths                        = {directorySourceCode};  
+def.SrcPaths                        = {directorySourceCode};
 def.LibPaths                        = {''};
 def.HostLibFiles                    = {};
 def.Options.language                = 'C++';
@@ -44,7 +43,7 @@ legacy_code('sfcn_cmex_generate', defs);
 
 % Define the OpenMP flags and other compiler flags inline
 mexFlags = {
-    'CFLAGS="-Wall -Wextra -Og -mtune=native -fPIC -Winit-self -fdiagnostics-show-option"', ...
+    'CFLAGS="-Wall -Wextra -Og -mtune=native -fopenmp -fPIC -Winit-self -fdiagnostics-show-option"', ...
     'CXXFLAGS="-Wall -Wextra -Og -mtune=native -std=c++20 -fopenmp -fPIC -Winit-self -fdiagnostics-show-option"', ...
     'LDFLAGS="-Wall -Wextra -Og -mtune=native -std=c++20 -fopenmp -fdiagnostics-show-option"'
 };
@@ -52,29 +51,29 @@ mexFlags = {
 
 % Include directories for required libraries
 includes = {
-    '-I/usr/include',              ...      % General include directory
-    '-I/usr/include/eigen3'                 % Eigen library headers (often required by PCL)
-    '-I/usr/include/tbb',          ...      % Intel TBB headers
-    '-I/usr/include/pcl-1.12',     ...      % Point Cloud Library (PCL) headers
+    '-I/usr/include/',              ...      % General include directory
+    '-I/usr/include/pcl-1.14/',     ...      % Point Cloud Library (PCL) headers
+    '-I/usr/include/eigen3/',       ...      % Eigen library headers (often required by PCL)
+    '-I/usr/include/vtk-9.1/'
 };
 
 % Libraries and library paths
 libraries = {
     '-L/usr/lib',                                                   ...      % Standard library path
-    '-L/usr/local/lib',                                             ...      % Additional library path
+    '-L/usr/lib/x86_64-linux-gnu',                                  ...      % Additional library path
     '-lstdc++',                                                     ...      % Standard C++ library
     '-lpthread',                                                    ...      % POSIX thread library
-    '-ltbb',                                                        ...      % Intel TBB library
-    '-ltbbmalloc',                                                  ...      % TBB scalable memory allocator
     '-lpcl_common', '-lpcl_io', '-lpcl_filters',                    ...      % PCL libraries
     '-lpcl_kdtree', '-lpcl_search', '-lpcl_features',               ...
     '-lpcl_surface', '-lpcl_sample_consensus',                      ...
     '-lpcl_octree', '-lpcl_visualization', '-lpcl_segmentation',    ...
-    '-lboost_system', '-lboost_filesystem'                                   % Boost libraries required by PCL
+    '-lpcl_registration',                                           ...      % Boost libraries required by PCL
+    '-lboost_system', '-lboost_filesystem',                         ...
+    '-lvtkCommonCore-9.1'                                                    
 };
 
 % Compile using legacy_code with inline mexFlags, includes, and libraries
-legacy_code('compile', defs, {mexFlags{:}, includes{:}, libraries{:}});
+legacy_code('compile', defs, [mexFlags(:)', includes(:)', libraries(:)']);
 
 % Generate TLC
 legacy_code('sfcn_tlc_generate', defs);
