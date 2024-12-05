@@ -58,6 +58,7 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
     // Step 2: Handle first-frame initialization
     if (prevClusterMap_.empty()) {
         initializePrevClusterMap();
+        std::cout << "Initialize cluster because prevClusterMap is empty \n";
         return; // Exit early, no further processing needed on first frame
     }
 
@@ -65,6 +66,7 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
     associateClusters();
     if (persistentAssociations_.empty()) {
         initializePrevClusterMap();
+        std::cout << "Initialize cluster because associateClusters is empty \n";
         return; // Exit early if no associations found
     }
 
@@ -74,6 +76,7 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
 
     // Step 5: Update prevClusterMap_ with the latest frame data
     updatePrevClusterMap();
+    std::cout << "Function ClusterExtractor running okay.\n";
 }
 //##############################################################################
 // Function to extract clusters using PCL's Euclidean Cluster Extraction
