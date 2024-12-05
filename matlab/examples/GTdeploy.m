@@ -10,7 +10,7 @@ target = GT.GenericTarget(username, address);
 target.terminateAtTaskOverload = false;
 target.terminateAtCPUOverload = false;
 target.targetSoftwareDirectory = '~/GT/sendPoints/';
-% target.targetBitmaskCPUCores = '0x1FFFFF';
+target.targetBitmaskCPUCores = '0x0000F000';
 
 target.additionalCompilerFlags.DEBUG_MODE = true;
 %target.portAppSocket = 65535;
