@@ -208,7 +208,7 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
     // Return unique voxels as a vector
     return std::vector<Eigen::Vector3i>(uniqueVoxels.begin(), uniqueVoxels.end());
 }
-//##############################################################################
+///##############################################################################
 // Perform marking Voxels For Clearing
 void OccupancyMap::markVoxelsForClearing() {
     // First parallel task: Mark voxels beyond the maximum reaching distance
@@ -233,3 +233,161 @@ void OccupancyMap::markVoxelsForClearing() {
             targetVoxel.removalReason = RemovalReason::Raycasting;
         }
     });
+}
+//##############################################################################
+// Perform raycast to remove voxel
+void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud) {
+    // Step 1: Collect unique grid indices from the dynamic point cloud
+    tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> insertedDynamicVoxels_;
+
+    for (const auto& point : dynamicCloud) {
+        Eigen::Vector3i gridIndex = posToGridIndex(point.position);
+        insertedDynamicVoxels_[gridIndex] = {};
+    }
+
+    // Step 2: Mark corresponding voxels in occupancyMap_ as dynamic if they exist
+    for (const auto& [gridIndex, voxel] : insertedDynamicVoxels_) {
+        if (occupancyMap_.find(gridIndex) != occupancyMap_.end()) { // Ensure voxel exists
+            auto& targetVoxel = occupancyMap_[gridIndex];
+            targetVoxel.isDynamic = true;
+            targetVoxel.removalReason = RemovalReason::Dynamic;
+        }
+    }
+}
+//##############################################################################
+// Perform pruning voxel
+void OccupancyMap::removeFlaggedVoxels() {
+    for (auto it = occupancyMap_.begin(); it != occupancyMap_.end();) {
+        // Use conditional operator to choose between erase and increment
+        it = (it->second.removalReason != RemovalReason::None) 
+            ? occupancyMap_.erase(it) 
+            : std::next(it);
+    }
+}
+//##############################################################################
+// getDynamicVoxels
+std::vector<OccupancyMap::VoxelData> OccupancyMap::getDynamicVoxels() const {
+    std::vector<VoxelData> dynamicVoxels;
+    dynamicVoxels.reserve(occupancyMap_.size());  // Estimate 10% of voxels are dynamic
+
+    // Use a concurrent vector if TBB is available for parallel processing
+    tbb::concurrent_vector<VoxelData> concurrentDynamicVoxels;
+
+    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& entry) {
+        const auto& voxel = entry.second;
+        if (voxel.isDynamic) {
+            concurrentDynamicVoxels.push_back(voxel);
+        }
+    });
+
+    // Convert concurrent vector to standard vector for output
+    dynamicVoxels.assign(concurrentDynamicVoxels.begin(), concurrentDynamicVoxels.end());
+    return dynamicVoxels;
+}
+//##############################################################################
+// getStaticVoxels
+std::vector<OccupancyMap::VoxelData> OccupancyMap::getStaticVoxels() const {
+    std::vector<VoxelData> staticVoxels;
+    staticVoxels.reserve(occupancyMap_.size());
+
+    // Use a concurrent vector to allow parallel writes without locks
+    tbb::concurrent_vector<VoxelData> concurrentStaticVoxels;
+
+    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& entry) {
+        const auto& voxel = entry.second;
+        if (!voxel.isDynamic) {
+            concurrentStaticVoxels.push_back(voxel);
+        }
+    });
+
+    // Convert concurrent vector to standard vector for output
+    staticVoxels.assign(concurrentStaticVoxels.begin(), concurrentStaticVoxels.end());
+    return staticVoxels;
+}
+//##############################################################################
+// getVoxelCenters
+std::vector<Eigen::Vector3f> OccupancyMap::getVoxelCenters(const std::vector<OccupancyMap::VoxelData>& voxels) {
+    // Preallocate the exact size needed to avoid resizing and reserve overhead
+    std::vector<Eigen::Vector3f> voxelCenters(voxels.size());
+
+    // Use std::transform to fill voxelCenters with center positions from each voxel
+    std::transform(voxels.begin(), voxels.end(), voxelCenters.begin(),
+                   [](const VoxelData& voxel) { return voxel.centerPosition; });
+
+    return voxelCenters;
+}
+//##############################################################################
+// Calculate occupancy-based grayscale color
+Eigen::Vector3i OccupancyMap::calculateOccupancyColor(const OccupancyMap::VoxelData& voxel) {
+    int occupancyColorValue = static_cast<int>(255.0 * std::min(static_cast<int>(voxel.points.size()), maxPointsPerVoxel_) / maxPointsPerVoxel_);
+    return Eigen::Vector3i(occupancyColorValue, occupancyColorValue, occupancyColorValue);
+}
+//##############################################################################
+// Calculate reflectivity color
+Eigen::Vector3i OccupancyMap::calculateReflectivityColor(float avgReflectivity) {
+    int reflectivityColorValue;
+
+    if (avgReflectivity <= 100.0f) {
+        reflectivityColorValue = static_cast<int>(avgReflectivity * 2.55f);  // Linear scale 0–100 to 0–255
+    } else {
+        float transitionFactor = 0.2f;
+        if (avgReflectivity <= 110.0f) {
+            float linearComponent = 2.55f * avgReflectivity;
+            float logComponent = 155.0f + (100.0f * (std::log2(avgReflectivity - 100.0f + 1.0f) / std::log2(156.0f)));
+            reflectivityColorValue = static_cast<int>((1.0f - transitionFactor) * linearComponent + transitionFactor * logComponent);
+        } else {
+            float logReflectivity = std::log2(avgReflectivity - 100.0f + 1.0f) / std::log2(156.0f);  
+            reflectivityColorValue = static_cast<int>(155.0f + logReflectivity * 100.0f); 
+        }
+    }
+    return Eigen::Vector3i(std::clamp(reflectivityColorValue, 0, 255), 
+                           std::clamp(reflectivityColorValue, 0, 255), 
+                           std::clamp(reflectivityColorValue, 0, 255));
+}
+//##############################################################################
+// Calculate intensity-based color
+Eigen::Vector3i OccupancyMap::calculateIntensityColor(float avgIntensity) {
+    int intensityColorValue = static_cast<int>(std::clamp(avgIntensity, 0.0f, 255.0f));  // Clamped 0–255
+    return Eigen::Vector3i(intensityColorValue, intensityColorValue, intensityColorValue);
+}
+//##############################################################################
+// Calculate NIR-based color
+Eigen::Vector3i OccupancyMap::calculateNIRColor(float avgNIR) {
+    // Clamp avgNIR directly to 0-255 range, as NIR values over 255 should still map to 255
+    int NIRColorValue = static_cast<int>(std::clamp(avgNIR, 0.0f, 255.0f));
+    return Eigen::Vector3i(NIRColorValue, NIRColorValue, NIRColorValue);
+}
+//##############################################################################
+// Assuming calculateOccupancyColor, calculateReflectivityColor, calculateIntensityColor, calculateNIRColor are defined as shown in previous examples
+std::tuple<std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>> 
+OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& voxels) {
+    // Check if input is empty
+    if (voxels.empty()) {
+        return {{}, {}, {}, {}};  // Return empty vectors if no data
+    }
+    // Initialize color vectors for each characteristic with reserved space
+    std::vector<Eigen::Vector3i> occupancyColors(voxels.size());
+    std::vector<Eigen::Vector3i> reflectivityColors(voxels.size());
+    std::vector<Eigen::Vector3i> intensityColors(voxels.size());
+    std::vector<Eigen::Vector3i> NIRColors(voxels.size());
+
+    // Parallel processing to compute colors for each voxel
+    tbb::parallel_for(uint64_t(0), voxels.size(), [&](uint64_t i) {
+        const VoxelData& voxel = voxels[i];
+        // Calculate each characteristic color for the voxel
+        occupancyColors[i] = calculateOccupancyColor(voxel);
+        reflectivityColors[i] = calculateReflectivityColor(voxel.avgReflectivity);
+        intensityColors[i] = calculateIntensityColor(voxel.avgIntensity);
+        NIRColors[i] = calculateNIRColor(voxel.avgNIR);
+    });
+
+    // Return all color vectors as a tuple
+    return std::make_tuple(occupancyColors, reflectivityColors, intensityColors, NIRColors);
+}
+//##############################################################################
+// Assign all voxels a red color
+std::vector<Eigen::Vector3i> OccupancyMap::assignVoxelColorsRed(const std::vector<OccupancyMap::VoxelData>& voxels) {
+    std::vector<Eigen::Vector3i> colors;
+    colors.assign(voxels.size(), Eigen::Vector3i(255, 0, 0));  // Direct assignment of red color to all entries
+    return colors;
+}
