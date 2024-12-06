@@ -73,7 +73,7 @@ void OccupancyMap::updateCurrentFrame(uint32_t newFrame) {
 }
 
 // -----------------------------------------------------------------------------
-// Section: posToGridIndex
+// Section: worldToGrid
 // -----------------------------------------------------------------------------
 
 Eigen::Vector3i OccupancyMap::worldToGrid(const Eigen::Vector3f& pos) const {
@@ -280,7 +280,7 @@ void OccupancyMap::markVoxelsForClearing() {
         const auto& [gridIndex, voxel] = insertedEntry;
 
         // Use start-end pair cache
-        auto rayKey = std::make_pair(posToGridIndex(vehiclePosition_), posToGridIndex(voxel.centerPosition));
+        auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
         tbb::concurrent_hash_map<std::pair<Eigen::Vector3i, Eigen::Vector3i>, std::vector<Eigen::Vector3i>, VoxelPairHash>::accessor startEndAccessor;
 
         // Check the start-end pair cache first
