@@ -84,7 +84,6 @@ class OccupancyMap {
                                         const std::vector<float>& reflectivity,
                                         const std::vector<float>& intensity,
                                         const std::vector<float>& NIR,
-                                        const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud,
                                         const Eigen::Vector3f& newPosition,
                                         uint32_t newFrame);
         //##############################################################################

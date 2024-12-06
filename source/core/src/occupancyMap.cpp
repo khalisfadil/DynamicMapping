@@ -32,7 +32,6 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
                                            const std::vector<float>& reflectivity,
                                            const std::vector<float>& intensity,
                                            const std::vector<float>& NIR,
-                                           const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud,
                                            const Eigen::Vector3f& newPosition,
                                            uint32_t newFrame) {
     // Step 0: Update persistent state
@@ -42,16 +41,11 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
     // Step 1: Insert the point cloud
     insertPointCloud(pointCloud, reflectivity, intensity, NIR);
 
-    // Step 2: Mark voxels for clearing
-    markVoxelsForClearing();
+    // // Step 2: Mark voxels for clearing
+    // markVoxelsForClearing();
 
-    // Step 3: Remove flagged voxels
-    removeFlaggedVoxels();
-
-    // Step 4: Mark dynamic voxels only if dynamicCloud is not empty
-    if (!dynamicCloud.empty()) {
-        markDynamicVoxels(dynamicCloud);
-    }
+    // // Step 3: Remove flagged voxels
+    // removeFlaggedVoxels();
 }
 //##############################################################################
 // Function to update the vehicle position
