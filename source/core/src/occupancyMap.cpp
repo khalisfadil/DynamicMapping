@@ -20,14 +20,20 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #include "occupancyMap.hpp"
-//##############################################################################
-// Constructor
+
+// -----------------------------------------------------------------------------
+// Section: OccupancyMap
+// -----------------------------------------------------------------------------
+
 OccupancyMap::OccupancyMap(float mapRes, float reachingDistance, Eigen::Vector3f mapCenter)
     : mapRes_(mapRes), reachingDistance_(reachingDistance), mapCenter_(mapCenter)  {
     // constructor body
 }
-//##############################################################################
-// Main Pipeline
+
+// -----------------------------------------------------------------------------
+// Section: runOccupancyMapPipeline
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& pointCloud,
                                            const std::vector<float>& reflectivity,
                                            const std::vector<float>& intensity,
@@ -49,30 +55,45 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
 
     std::cout << "Function OccupancyMap running okay.\n";
 }
-//##############################################################################
-// Function to update the vehicle position
+
+// -----------------------------------------------------------------------------
+// Section: updateVehiclePosition
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::updateVehiclePosition(const Eigen::Vector3f& newPosition) {
     vehiclePosition_ = newPosition;
 }
-//##############################################################################
-// Function to update the current frame
+
+// -----------------------------------------------------------------------------
+// Section: updateCurrentFrame
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::updateCurrentFrame(uint32_t newFrame) {
     currentFrame_ = newFrame;
 }
-//##############################################################################
-// Convert position to voxel grid index
-Eigen::Vector3i OccupancyMap::posToGridIndex(const Eigen::Vector3f& pos) const {
+
+// -----------------------------------------------------------------------------
+// Section: posToGridIndex
+// -----------------------------------------------------------------------------
+
+Eigen::Vector3i OccupancyMap::worldToGrid(const Eigen::Vector3f& pos) const {
     Eigen::Array3f scaledPos = (pos - mapCenter_).array() * (1.0 / mapRes_);
     return Eigen::Vector3i(std::floor(scaledPos.x()), std::floor(scaledPos.y()), std::floor(scaledPos.z()));
 }
-//##############################################################################
-// Convert grid index back to world position (center of voxel)
+
+// -----------------------------------------------------------------------------
+// Section: gridToWorld
+// -----------------------------------------------------------------------------
+
 Eigen::Vector3f OccupancyMap::gridToWorld(const Eigen::Vector3i& gridIndex) const {
     static const Eigen::Vector3f halfRes(mapRes_ / 2, mapRes_ / 2, mapRes_ / 2);
     return mapCenter_ + gridIndex.cast<float>() * mapRes_ + halfRes;
 }
-//##############################################################################
-// Calculate average values for a voxel
+
+// -----------------------------------------------------------------------------
+// Section: updateVoxelAverages
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::updateVoxelAverages(VoxelData& voxel) const {
     const uint64_t pointCount = voxel.points.size();
     if (pointCount == 0) return;
@@ -82,8 +103,11 @@ void OccupancyMap::updateVoxelAverages(VoxelData& voxel) const {
     voxel.avgIntensity = voxel.totalIntensity * invPointCount;
     voxel.avgNIR = voxel.totalNIR * invPointCount;
 }
-//##############################################################################
-// insert the point cloud into occupancy map
+
+// -----------------------------------------------------------------------------
+// Section: insertPointCloud
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointCloud,
                                    const std::vector<float>& reflectivity,
                                    const std::vector<float>& intensity,
@@ -99,7 +123,7 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointClo
 
             for (uint64_t i = range.begin(); i < range.end(); ++i) {
                 const Eigen::Vector3f& point = pointCloud[i];
-                Eigen::Vector3i gridIndex = posToGridIndex(point);
+                Eigen::Vector3i gridIndex = worldToGrid(point);
                 auto& voxel = localMap[gridIndex];
 
                 if (voxel.points.empty()) {
@@ -172,41 +196,75 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointClo
         insertedVoxels_[gridIndex] = voxel;
     }
 }
-//##############################################################################
-// Perform raycast to remove voxel
+
+// -----------------------------------------------------------------------------
+// Section: performRaycast
+// -----------------------------------------------------------------------------
+
 std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f& start, const Eigen::Vector3f& end) {
     // Define a small threshold for "close" points
     const float closeThreshold = 1e-3;
 
     // If start and end points are too close, return the starting voxel only
     if ((end - start).squaredNorm() < closeThreshold * closeThreshold) {
-        return { posToGridIndex(start) };
+        return { worldToGrid(start) };
     }
-    // Precompute values for the loop to avoid recalculating in each iteration
-    Eigen::Vector3f direction = (end - start).normalized();
-    float distance = (end - start).norm();
-    // Initialize voxel collection
-    tsl::robin_set<Eigen::Vector3i, Vector3iHash, Vector3iEqual> uniqueVoxels;
-    Eigen::Vector3i lastVoxelIndex = posToGridIndex(start);
-    uniqueVoxels.insert(lastVoxelIndex);
-    // Use a single position variable and avoid unnecessary recalculations in each step
-    Eigen::Vector3f currentPos = start;
-    for (float step = mapRes_; step < distance; step += mapRes_) {
-        currentPos += direction * mapRes_;
-        Eigen::Vector3i voxelIndex = posToGridIndex(currentPos);
 
-        // Insert only if the voxel index changes
-        if (voxelIndex != lastVoxelIndex) {
-            uniqueVoxels.insert(voxelIndex);
-            lastVoxelIndex = voxelIndex;
+    // Convert start and end positions to voxel indices
+    Eigen::Vector3i startVoxel = worldToGrid(start);
+    Eigen::Vector3i endVoxel = worldToGrid(end);
+
+    // Initialize voxel collection using a concurrent container
+    tbb::concurrent_vector<Eigen::Vector3i> voxelIndices;
+
+    // Initialize Bresenham's algorithm parameters
+    Eigen::Vector3i delta = (endVoxel - startVoxel).cwiseAbs();
+    Eigen::Vector3i step = (endVoxel - startVoxel).cwiseSign();
+    Eigen::Vector3i currentVoxel = startVoxel;
+
+    voxelIndices.push_back(currentVoxel); // Include the starting voxel
+
+    // Determine the dominant axis
+    int maxAxis = delta.maxCoeff();
+    int primaryAxis = (delta.x() >= delta.y() && delta.x() >= delta.z()) ? 0 : (delta.y() >= delta.z() ? 1 : 2);
+
+    // Initialize error terms for Bresenham's algorithm
+    int error1 = 2 * delta[(primaryAxis + 1) % 3] - delta[primaryAxis];
+    int error2 = 2 * delta[(primaryAxis + 2) % 3] - delta[primaryAxis];
+
+    // Traverse the line using Bresenham's algorithm
+    for (int i = 0; i < delta[primaryAxis]; ++i) {
+        currentVoxel[primaryAxis] += step[primaryAxis];
+
+        if (error1 > 0) {
+            currentVoxel[(primaryAxis + 1) % 3] += step[(primaryAxis + 1) % 3];
+            error1 -= 2 * delta[primaryAxis];
         }
+
+        if (error2 > 0) {
+            currentVoxel[(primaryAxis + 2) % 3] += step[(primaryAxis + 2) % 3];
+            error2 -= 2 * delta[primaryAxis];
+        }
+
+        error1 += 2 * delta[(primaryAxis + 1) % 3];
+        error2 += 2 * delta[(primaryAxis + 2) % 3];
+
+        // Add the current voxel to the result
+        voxelIndices.push_back(currentVoxel);
     }
-    // Return unique voxels as a vector
-    return std::vector<Eigen::Vector3i>(uniqueVoxels.begin(), uniqueVoxels.end());
+
+    // Return results as a standard vector
+    return std::vector<Eigen::Vector3i>(voxelIndices.begin(), voxelIndices.end());
 }
-///##############################################################################
-// Perform marking Voxels For Clearing
+
+// -----------------------------------------------------------------------------
+// Section: markVoxelsForClearing
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::markVoxelsForClearing() {
+    // Create per-frame caches
+    tbb::concurrent_hash_map<std::pair<Eigen::Vector3i, Eigen::Vector3i>, std::vector<Eigen::Vector3i>, VoxelPairHash> startEndCache;
+
     // First parallel task: Mark voxels beyond the maximum reaching distance
     tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](auto& mapEntry) {
         auto& [gridIndex, targetVoxel] = mapEntry;
@@ -221,23 +279,47 @@ void OccupancyMap::markVoxelsForClearing() {
     tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
         const auto& [gridIndex, voxel] = insertedEntry;
 
-        // Perform raycasting from vehiclePosition_ to voxel center
-        for (const auto& rayVoxel : performRaycast(vehiclePosition_, voxel.centerPosition)) {
-            auto& targetVoxel = occupancyMap_[rayVoxel];
+        // Use start-end pair cache
+        auto rayKey = std::make_pair(posToGridIndex(vehiclePosition_), posToGridIndex(voxel.centerPosition));
+        tbb::concurrent_hash_map<std::pair<Eigen::Vector3i, Eigen::Vector3i>, std::vector<Eigen::Vector3i>, VoxelPairHash>::accessor startEndAccessor;
 
-            // Flag the voxel for removal due to raycasting
+        // Check the start-end pair cache first
+        if (startEndCache.find(startEndAccessor, rayKey)) {
+            auto& raycastVoxels = startEndAccessor->second;
+            startEndAccessor.release();
+
+            // Process cached raycast result
+            for (const auto& rayVoxel : raycastVoxels) {
+                auto& targetVoxel = occupancyMap_[rayVoxel];
+                targetVoxel.removalReason = RemovalReason::Raycasting;
+            }
+            return;
+        }
+
+        // If no cache hit, compute raycast
+        auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
+
+        // Update both caches
+        startEndCache.insert({rayKey, raycastVoxels});
+
+        // Process raycast result
+        for (const auto& rayVoxel : raycastVoxels) {
+            auto& targetVoxel = occupancyMap_[rayVoxel];
             targetVoxel.removalReason = RemovalReason::Raycasting;
         }
     });
 }
-//##############################################################################
-// Perform raycast to remove voxel
+
+// -----------------------------------------------------------------------------
+// Section: markDynamicVoxels
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWithAttributes>& dynamicCloud) {
     // Step 1: Collect unique grid indices from the dynamic point cloud
     tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> insertedDynamicVoxels_;
 
     for (const auto& point : dynamicCloud) {
-        Eigen::Vector3i gridIndex = posToGridIndex(point.position);
+        Eigen::Vector3i gridIndex = worldToGrid(point.position);
         insertedDynamicVoxels_[gridIndex] = {};
     }
 
@@ -250,8 +332,11 @@ void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWi
         }
     }
 }
-//##############################################################################
-// Perform pruning voxel
+
+// -----------------------------------------------------------------------------
+// Section: removeFlaggedVoxels
+// -----------------------------------------------------------------------------
+
 void OccupancyMap::removeFlaggedVoxels() {
     tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> newOccupancyMap;
 
@@ -265,8 +350,11 @@ void OccupancyMap::removeFlaggedVoxels() {
     // Replace the old map with the new map
     std::swap(occupancyMap_, newOccupancyMap);
 }
-//##############################################################################
-// getDynamicVoxels
+
+// -----------------------------------------------------------------------------
+// Section: getDynamicVoxels
+// -----------------------------------------------------------------------------
+
 std::vector<OccupancyMap::VoxelData> OccupancyMap::getDynamicVoxels() const {
     std::vector<VoxelData> dynamicVoxels;
     dynamicVoxels.reserve(occupancyMap_.size());  // Estimate 10% of voxels are dynamic
@@ -285,8 +373,11 @@ std::vector<OccupancyMap::VoxelData> OccupancyMap::getDynamicVoxels() const {
     dynamicVoxels.assign(concurrentDynamicVoxels.begin(), concurrentDynamicVoxels.end());
     return dynamicVoxels;
 }
-//##############################################################################
-// getStaticVoxels
+
+// -----------------------------------------------------------------------------
+// Section: getStaticVoxels
+// -----------------------------------------------------------------------------
+
 std::vector<OccupancyMap::VoxelData> OccupancyMap::getStaticVoxels() const {
     std::vector<VoxelData> staticVoxels;
     staticVoxels.reserve(occupancyMap_.size());
@@ -305,8 +396,11 @@ std::vector<OccupancyMap::VoxelData> OccupancyMap::getStaticVoxels() const {
     staticVoxels.assign(concurrentStaticVoxels.begin(), concurrentStaticVoxels.end());
     return staticVoxels;
 }
-//##############################################################################
-// getVoxelCenters
+
+// -----------------------------------------------------------------------------
+// Section: getVoxelCenters
+// -----------------------------------------------------------------------------
+
 std::vector<Eigen::Vector3f> OccupancyMap::getVoxelCenters(const std::vector<OccupancyMap::VoxelData>& voxels) {
     // Preallocate the exact size needed to avoid resizing and reserve overhead
     std::vector<Eigen::Vector3f> voxelCenters(voxels.size());
@@ -317,14 +411,20 @@ std::vector<Eigen::Vector3f> OccupancyMap::getVoxelCenters(const std::vector<Occ
 
     return voxelCenters;
 }
-//##############################################################################
-// Calculate occupancy-based grayscale color
+
+// -----------------------------------------------------------------------------
+// Section: calculateOccupancyColor
+// -----------------------------------------------------------------------------
+
 Eigen::Vector3i OccupancyMap::calculateOccupancyColor(const OccupancyMap::VoxelData& voxel) {
     int occupancyColorValue = static_cast<int>(255.0 * std::min(static_cast<int>(voxel.points.size()), maxPointsPerVoxel_) / maxPointsPerVoxel_);
     return Eigen::Vector3i(occupancyColorValue, occupancyColorValue, occupancyColorValue);
 }
-//##############################################################################
-// Calculate reflectivity color
+
+// -----------------------------------------------------------------------------
+// Section: calculateReflectivityColor
+// -----------------------------------------------------------------------------
+
 Eigen::Vector3i OccupancyMap::calculateReflectivityColor(float avgReflectivity) {
     int reflectivityColorValue;
 
@@ -345,21 +445,30 @@ Eigen::Vector3i OccupancyMap::calculateReflectivityColor(float avgReflectivity) 
                            std::clamp(reflectivityColorValue, 0, 255), 
                            std::clamp(reflectivityColorValue, 0, 255));
 }
-//##############################################################################
-// Calculate intensity-based color
+
+// -----------------------------------------------------------------------------
+// Section: calculateIntensityColor
+// -----------------------------------------------------------------------------
+
 Eigen::Vector3i OccupancyMap::calculateIntensityColor(float avgIntensity) {
     int intensityColorValue = static_cast<int>(std::clamp(avgIntensity, 0.0f, 255.0f));  // Clamped 0–255
     return Eigen::Vector3i(intensityColorValue, intensityColorValue, intensityColorValue);
 }
-//##############################################################################
-// Calculate NIR-based color
+
+// -----------------------------------------------------------------------------
+// Section: calculateNIRColor
+// -----------------------------------------------------------------------------
+
 Eigen::Vector3i OccupancyMap::calculateNIRColor(float avgNIR) {
     // Clamp avgNIR directly to 0-255 range, as NIR values over 255 should still map to 255
     int NIRColorValue = static_cast<int>(std::clamp(avgNIR, 0.0f, 255.0f));
     return Eigen::Vector3i(NIRColorValue, NIRColorValue, NIRColorValue);
 }
-//##############################################################################
-// Assuming calculateOccupancyColor, calculateReflectivityColor, calculateIntensityColor, calculateNIRColor are defined as shown in previous examples
+
+// -----------------------------------------------------------------------------
+// Section: computeVoxelColors
+// -----------------------------------------------------------------------------
+
 std::tuple<std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>, std::vector<Eigen::Vector3i>> 
 OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& voxels) {
     // Check if input is empty
@@ -385,8 +494,11 @@ OccupancyMap::computeVoxelColors(const std::vector<OccupancyMap::VoxelData>& vox
     // Return all color vectors as a tuple
     return std::make_tuple(occupancyColors, reflectivityColors, intensityColors, NIRColors);
 }
-//##############################################################################
-// Assign all voxels a red color
+
+// -----------------------------------------------------------------------------
+// Section: assignVoxelColorsRed
+// -----------------------------------------------------------------------------
+
 std::vector<Eigen::Vector3i> OccupancyMap::assignVoxelColorsRed(const std::vector<OccupancyMap::VoxelData>& voxels) {
     std::vector<Eigen::Vector3i> colors;
     colors.assign(voxels.size(), Eigen::Vector3i(255, 0, 0));  // Direct assignment of red color to all entries

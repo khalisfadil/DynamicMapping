@@ -23,10 +23,13 @@
 
 #include "EKFVelocity2D.hpp"
 
+#include <Eigen/Core>
+
 #include <cstdint>
 #include <deque>
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
