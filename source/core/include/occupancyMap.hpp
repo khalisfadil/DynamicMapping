@@ -652,22 +652,18 @@ class OccupancyMap {
         
         // -----------------------------------------------------------------------------
         /**
-         * @brief Removes flagged voxels from the occupancy map.
+         * @brief Removes flagged voxels from the occupancy map in parallel.
+         *
+         * @detail This function iterates over the entries in the `occupancyMap_` and removes 
+         * the voxels that have a `removalReason` other than `RemovalReason::None`. The processing
+         * is done in parallel using TBB's `parallel_for`. Each thread works on its own local 
+         * map to avoid contention when adding items. After the parallel processing, the local 
+         * maps from each thread are merged into a final map, which replaces the old occupancy map.
          * 
-         * @details
-         * This function creates a new occupancy map by excluding voxels flagged for removal. 
-         * Only voxels with `removalReason` set to `None` are transferred to the new map. 
-         * The function uses Intel TBB for parallel processing and a mutex to ensure thread-safe 
-         * updates to the new map.
-         * 
-         * Steps:
-         * 1. Iterate over the current occupancy map in parallel using `tbb::parallel_for`.
-         * 2. For each voxel, check its `removalReason`. If the reason is `None`, transfer it 
-         *    to a new map.
-         * 3. Use a mutex (`std::mutex`) to protect concurrent writes to the new map.
-         * 4. Replace the old occupancy map with the new map using `std::swap`.
-         * 
-         * @return None.
+         * This approach ensures efficient parallel processing without the need for mutexes, 
+         * by allowing each thread to modify its own thread-local map. Once all threads are done, 
+         * the results are combined into the final `newOccupancyMap` and the original `occupancyMap_`
+         * is replaced.
          */
         void removeFlaggedVoxels();
 

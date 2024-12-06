@@ -338,14 +338,22 @@ void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWi
 // -----------------------------------------------------------------------------
 
 void OccupancyMap::removeFlaggedVoxels() {
-    tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> newOccupancyMap;
+    // Create a thread-local map for each thread to avoid contention
+    std::vector<tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual>> localMaps(tbb::this_task_arena::current_thread_index() + 1);
 
     tbb::parallel_for(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& item) {
         if (item.second.removalReason == RemovalReason::None) {
-            std::lock_guard<std::mutex> lock(dataMutex); // Protect writes to newOccupancyMap
-            newOccupancyMap[item.first] = item.second;
+            // Get the local map corresponding to the current thread
+            auto& localMap = localMaps[tbb::this_task_arena::current_thread_index()];
+            localMap[item.first] = item.second;  // Add item to the thread-local map
         }
     });
+
+    // Merge all thread-local maps into the final newOccupancyMap
+    tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> newOccupancyMap;
+    for (auto& localMap : localMaps) {
+        newOccupancyMap.insert(localMap.begin(), localMap.end());
+    }
 
     // Replace the old map with the new map
     std::swap(occupancyMap_, newOccupancyMap);
