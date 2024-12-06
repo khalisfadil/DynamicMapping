@@ -33,6 +33,7 @@
 #include <tbb/parallel_reduce.h>
 #include <tbb/blocked_range.h>
 #include <tbb/concurrent_unordered_map.h>
+#include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_queue.h>
 #include <tbb/concurrent_vector.h>
 #include <tsl/robin_map.h>

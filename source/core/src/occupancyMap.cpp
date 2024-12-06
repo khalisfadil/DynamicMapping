@@ -41,11 +41,13 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
     // Step 1: Insert the point cloud
     insertPointCloud(pointCloud, reflectivity, intensity, NIR);
 
-    // // Step 2: Mark voxels for clearing
-    // markVoxelsForClearing();
+    // Step 2: Mark voxels for clearing
+    markVoxelsForClearing();
 
-    // // Step 3: Remove flagged voxels
-    // removeFlaggedVoxels();
+    // Step 3: Remove flagged voxels
+    removeFlaggedVoxels();
+
+    std::cout << "Function OccupancyMap running okay.\n";
 }
 //##############################################################################
 // Function to update the vehicle position
@@ -251,12 +253,17 @@ void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWi
 //##############################################################################
 // Perform pruning voxel
 void OccupancyMap::removeFlaggedVoxels() {
-    for (auto it = occupancyMap_.begin(); it != occupancyMap_.end();) {
-        // Use conditional operator to choose between erase and increment
-        it = (it->second.removalReason != RemovalReason::None) 
-            ? occupancyMap_.erase(it) 
-            : std::next(it);
-    }
+    tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> newOccupancyMap;
+
+    tbb::parallel_for(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& item) {
+        if (item.second.removalReason == RemovalReason::None) {
+            std::lock_guard<std::mutex> lock(dataMutex); // Protect writes to newOccupancyMap
+            newOccupancyMap[item.first] = item.second;
+        }
+    });
+
+    // Replace the old map with the new map
+    std::swap(occupancyMap_, newOccupancyMap);
 }
 //##############################################################################
 // getDynamicVoxels
