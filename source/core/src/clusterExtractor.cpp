@@ -55,28 +55,28 @@ void ClusterExtractor::runClusterExtractorPipeline(const std::vector<Eigen::Vect
     extractClusters(pointCloud, reflectivity, intensity, NIR);
     calculateClusterProperties();
 
-    // Step 2: Handle first-frame initialization
-    if (prevClusterMap_.empty()) {
-        initializePrevClusterMap();
-        std::cout << "Initialize cluster because prevClusterMap is empty \n";
-        return; // Exit early, no further processing needed on first frame
-    }
+    // // Step 2: Handle first-frame initialization
+    // if (prevClusterMap_.empty()) {
+    //     initializePrevClusterMap();
+    //     std::cout << "Initialize cluster because prevClusterMap is empty \n";
+    //     return; // Exit early, no further processing needed on first frame
+    // }
 
-    // Step 3: Associate clusters with previous frames
-    associateClusters();
-    if (persistentAssociations_.empty()) {
-        initializePrevClusterMap();
-        std::cout << "Initialize cluster because associateClusters is empty \n";
-        return; // Exit early if no associations found
-    }
+    // // Step 3: Associate clusters with previous frames
+    // associateClusters();
+    // if (persistentAssociations_.empty()) {
+    //     initializePrevClusterMap();
+    //     std::cout << "Initialize cluster because associateClusters is empty \n";
+    //     return; // Exit early if no associations found
+    // }
 
-    // Step 4: Process clusters with EKF if associations are present
-    updateEKFForClusters();
-    evaluateClusterDynamics();
+    // // Step 4: Process clusters with EKF if associations are present
+    // updateEKFForClusters();
+    // evaluateClusterDynamics();
 
-    // Step 5: Update prevClusterMap_ with the latest frame data
-    updatePrevClusterMap();
-    std::cout << "Function ClusterExtractor running okay.\n";
+    // // Step 5: Update prevClusterMap_ with the latest frame data
+    // updatePrevClusterMap();
+    // std::cout << "Function ClusterExtractor running okay.\n";
 }
 //##############################################################################
 // Function to extract clusters using PCL's Euclidean Cluster Extraction
