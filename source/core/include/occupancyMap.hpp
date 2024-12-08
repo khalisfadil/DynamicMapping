@@ -370,16 +370,9 @@ class OccupancyMap {
         /**
          * @brief Custom hash function for `Eigen::Vector3i` used in hash maps.
          * 
-         * @details
          * This struct provides a hash function for `Eigen::Vector3i`, generating a unique hash 
          * value by combining the hashes of the vector's components (x, y, z). The components are 
          * individually hashed and combined using bitwise XOR and shifts to reduce collisions. 
-         * This hash function is used in hash-based data structures, such as `tsl::robin_map`, 
-         * to efficiently manage voxel grid indices as keys.
-         * 
-         * @param vec The `Eigen::Vector3i` vector to hash.
-         * 
-         * @return A `std::size_t` hash value derived from the vector's components.
          */
         struct Vector3iHash {
             std::size_t operator()(const Eigen::Vector3i& vec) const {
@@ -395,59 +388,54 @@ class OccupancyMap {
         /**
          * @brief Custom equality comparator for `Eigen::Vector3i` used in hash maps.
          * 
-         * @details
          * This struct provides an equality comparison operator for `Eigen::Vector3i`, ensuring that 
          * two 3D integer vectors are considered equal if all their corresponding components (x, y, z) 
-         * are identical. It is used as the equality predicate in hash-based data structures, such as 
-         * `tsl::robin_map`, to compare voxel grid indices.
-         * 
-         * @param lhs The left-hand side `Eigen::Vector3i` to compare.
-         * @param rhs The right-hand side `Eigen::Vector3i` to compare.
-         * 
-         * @return `true` if all components of `lhs` and `rhs` are equal, otherwise `false`.
+         * are identical.
          */
         struct Vector3iEqual {
             bool operator()(const Eigen::Vector3i& lhs, const Eigen::Vector3i& rhs) const {
-                return lhs == rhs;}};
+                return lhs == rhs;
+            }
+        };
 
         // -----------------------------------------------------------------------------
         /**
-         * @brief Hash function for a pair of Eigen::Vector3i.
+         * @brief Hash function for a pair of `Eigen::Vector3i`.
          * 
          * This structure provides a custom hash implementation for a pair of 3D integer vectors 
          * (start and end voxel indices). The hash combines the individual hashes of both vectors 
-         * to create a unique hash for the pair. This is used in hash-based containers such as 
-         * tbb::concurrent_hash_map.
+         * to create a unique hash for the pair.
          */
         struct VoxelPairHash {
-            // Hash function for a pair of Eigen::Vector3i
             std::size_t operator()(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& pair) const {
-                auto hash1 = std::hash<int>()(pair.first.x()) ^ 
-                            (std::hash<int>()(pair.first.y()) << 1) ^
-                            (std::hash<int>()(pair.first.z()) << 2);
+                std::size_t hash1 = Vector3iHash{}(pair.first);
+                std::size_t hash2 = Vector3iHash{}(pair.second);
 
-                auto hash2 = std::hash<int>()(pair.second.x()) ^
-                            (std::hash<int>()(pair.second.y()) << 1) ^
-                            (std::hash<int>()(pair.second.z()) << 2);
-
-                return hash1 ^ (hash2 << 3);
+                // Combine the two hashes into a single hash
+                return hash1 ^ (hash2 << 1);
             }
+        };
 
-            // Equality comparator for a pair of Eigen::Vector3i
-            bool equal(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& a,
-                    const std::pair<Eigen::Vector3i, Eigen::Vector3i>& b) const {
+        // -----------------------------------------------------------------------------
+        /**
+         * @brief Equality comparator for a pair of `Eigen::Vector3i`.
+         * 
+         * Ensures that two pairs of 3D integer vectors are considered equal if both their start and 
+         * end vectors are identical.
+         */
+        struct VoxelPairEqual {
+            bool operator()(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& a,
+                            const std::pair<Eigen::Vector3i, Eigen::Vector3i>& b) const {
                 return a.first == b.first && a.second == b.second;
             }
         };
 
         // -----------------------------------------------------------------------------
         /**
-         * @brief Hash function for Eigen::Vector3f.
+         * @brief Hash function for `Eigen::Vector3f`.
          * 
-         * This structure provides a custom hash implementation for a 3D floating-point vector 
-         * (voxel center position). The hash combines the individual hashes of the x, y, and z 
-         * components to create a unique hash for the vector. This is used in hash-based containers 
-         * such as tbb::concurrent_hash_map.
+         * Provides a custom hash implementation for a 3D floating-point vector (voxel center position).
+         * Combines the individual hashes of the x, y, and z components to create a unique hash.
          */
         struct Vector3fHash {
             std::size_t operator()(const Eigen::Vector3f& vec) const {
