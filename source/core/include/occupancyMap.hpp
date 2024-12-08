@@ -364,6 +364,8 @@ class OccupancyMap {
          */
         uint32_t currentFrame_;
 
+        std::mutex occupancyMapMutex;
+
         // -----------------------------------------------------------------------------
         /**
          * @brief Custom hash function for `Eigen::Vector3i` used in hash maps.
@@ -423,6 +425,11 @@ class OccupancyMap {
                 seed ^= Vector3iHash()(pair.first) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
                 seed ^= Vector3iHash()(pair.second) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
                 return seed;
+            }
+
+            // TBB requires this function for compatibility with tbb::concurrent_hash_map
+            std::size_t hash(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& pair) const {
+                return (*this)(pair); // Reuse the operator() implementation
             }
         };
         
