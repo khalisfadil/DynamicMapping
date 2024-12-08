@@ -381,7 +381,13 @@ class OccupancyMap {
          */
         struct Vector3iHash {
             std::size_t operator()(const Eigen::Vector3i& vec) const {
-                return std::hash<int>()(vec.x()) ^ (std::hash<int>()(vec.y()) << 1) ^ (std::hash<int>()(vec.z()) << 2);}};
+                std::size_t seed = 0;
+                seed ^= std::hash<int>()(vec.x()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<int>()(vec.y()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<int>()(vec.z()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                return seed;
+            }
+        };
 
         // -----------------------------------------------------------------------------
         /**
@@ -413,17 +419,10 @@ class OccupancyMap {
          */
         struct VoxelPairHash {
             std::size_t operator()(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& pair) const {
-                // Combine hashes of the two vector indices
-                auto hash1 = std::hash<int>()(pair.first.x()) ^ 
-                            (std::hash<int>()(pair.first.y()) << 1) ^
-                            (std::hash<int>()(pair.first.z()) << 2);
-
-                auto hash2 = std::hash<int>()(pair.second.x()) ^
-                            (std::hash<int>()(pair.second.y()) << 1) ^
-                            (std::hash<int>()(pair.second.z()) << 2);
-
-                // Combine the two hashes into a single hash
-                return hash1 ^ (hash2 << 3);
+                std::size_t seed = 0;
+                seed ^= Vector3iHash()(pair.first) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= Vector3iHash()(pair.second) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                return seed;
             }
         };
         
@@ -438,13 +437,11 @@ class OccupancyMap {
          */
         struct Vector3fHash {
             std::size_t operator()(const Eigen::Vector3f& vec) const {
-                // Hash each component of the vector
-                auto hashX = std::hash<float>()(vec.x());
-                auto hashY = std::hash<float>()(vec.y());
-                auto hashZ = std::hash<float>()(vec.z());
-
-                // Combine the component hashes into a single hash
-                return hashX ^ (hashY << 1) ^ (hashZ << 2);
+                std::size_t seed = 0;
+                seed ^= std::hash<float>()(vec.x()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<float>()(vec.y()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<float>()(vec.z()) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                return seed;
             }
         };
 

@@ -269,8 +269,8 @@ void OccupancyMap::markVoxelsForClearing() {
     tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](auto& mapEntry) {
         auto& [gridIndex, targetVoxel] = mapEntry;
 
-        // Check if the voxel is beyond the maximum reaching distance
         if ((targetVoxel.centerPosition - vehiclePosition_).norm() > reachingDistance_) {
+            std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
             targetVoxel.removalReason = RemovalReason::MaxRangeExceeded;
         }
     });
@@ -279,31 +279,26 @@ void OccupancyMap::markVoxelsForClearing() {
     tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
         const auto& [gridIndex, voxel] = insertedEntry;
 
-        // Use start-end pair cache
         auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
         tbb::concurrent_hash_map<std::pair<Eigen::Vector3i, Eigen::Vector3i>, std::vector<Eigen::Vector3i>, VoxelPairHash>::accessor startEndAccessor;
 
-        // Check the start-end pair cache first
         if (startEndCache.find(startEndAccessor, rayKey)) {
             auto& raycastVoxels = startEndAccessor->second;
             startEndAccessor.release();
 
-            // Process cached raycast result
             for (const auto& rayVoxel : raycastVoxels) {
+                std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
                 auto& targetVoxel = occupancyMap_[rayVoxel];
                 targetVoxel.removalReason = RemovalReason::Raycasting;
             }
             return;
         }
 
-        // If no cache hit, compute raycast
         auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
-
-        // Update both caches
         startEndCache.insert({rayKey, raycastVoxels});
 
-        // Process raycast result
         for (const auto& rayVoxel : raycastVoxels) {
+            std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
             auto& targetVoxel = occupancyMap_[rayVoxel];
             targetVoxel.removalReason = RemovalReason::Raycasting;
         }
