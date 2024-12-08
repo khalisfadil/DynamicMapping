@@ -420,19 +420,26 @@ class OccupancyMap {
          * tbb::concurrent_hash_map.
          */
         struct VoxelPairHash {
+            // Hash function for a pair of Eigen::Vector3i
             std::size_t operator()(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& pair) const {
-                std::size_t seed = 0;
-                seed ^= Vector3iHash()(pair.first) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-                seed ^= Vector3iHash()(pair.second) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-                return seed;
+                auto hash1 = std::hash<int>()(pair.first.x()) ^ 
+                            (std::hash<int>()(pair.first.y()) << 1) ^
+                            (std::hash<int>()(pair.first.z()) << 2);
+
+                auto hash2 = std::hash<int>()(pair.second.x()) ^
+                            (std::hash<int>()(pair.second.y()) << 1) ^
+                            (std::hash<int>()(pair.second.z()) << 2);
+
+                return hash1 ^ (hash2 << 3);
             }
 
-            // TBB requires this function for compatibility with tbb::concurrent_hash_map
-            std::size_t hash(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& pair) const {
-                return (*this)(pair); // Reuse the operator() implementation
+            // Equality comparator for a pair of Eigen::Vector3i
+            bool equal(const std::pair<Eigen::Vector3i, Eigen::Vector3i>& a,
+                    const std::pair<Eigen::Vector3i, Eigen::Vector3i>& b) const {
+                return a.first == b.first && a.second == b.second;
             }
         };
-        
+
         // -----------------------------------------------------------------------------
         /**
          * @brief Hash function for Eigen::Vector3f.
