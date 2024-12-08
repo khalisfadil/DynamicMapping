@@ -652,18 +652,21 @@ class OccupancyMap {
         
         // -----------------------------------------------------------------------------
         /**
-         * @brief Removes flagged voxels from the occupancy map in parallel.
-         *
-         * @detail This function iterates over the entries in the `occupancyMap_` and removes 
-         * the voxels that have a `removalReason` other than `RemovalReason::None`. The processing
-         * is done in parallel using TBB's `parallel_for`. Each thread works on its own local 
-         * map to avoid contention when adding items. After the parallel processing, the local 
-         * maps from each thread are merged into a final map, which replaces the old occupancy map.
+         * @brief Removes all flagged voxels from the occupancy map.
          * 
-         * This approach ensures efficient parallel processing without the need for mutexes, 
-         * by allowing each thread to modify its own thread-local map. Once all threads are done, 
-         * the results are combined into the final `newOccupancyMap` and the original `occupancyMap_`
-         * is replaced.
+         * This function filters out all voxels flagged for removal (i.e., those with 
+         * `removalReason` set to a value other than `RemovalReason::None`). It utilizes 
+         * parallel processing with thread-local maps to efficiently handle large occupancy maps.
+         * 
+         * Steps:
+         * 1. Creates a thread-local map for each thread to avoid contention during parallel processing.
+         * 2. Iterates over the existing occupancy map in parallel, filtering out flagged voxels and storing 
+         *    non-flagged voxels in the corresponding thread-local map.
+         * 3. Merges all thread-local maps into a single final map.
+         * 4. Replaces the old map with the newly constructed map containing only non-flagged voxels.
+         * 
+         * @note This implementation ensures thread safety by using thread-local storage
+         * and utilizes efficient merging of thread-local maps to construct the final map.
          */
         void removeFlaggedVoxels();
 

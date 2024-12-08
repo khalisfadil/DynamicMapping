@@ -338,24 +338,30 @@ void OccupancyMap::markDynamicVoxels(const std::vector<ClusterExtractor::PointWi
 // -----------------------------------------------------------------------------
 
 void OccupancyMap::removeFlaggedVoxels() {
-    // Create a thread-local map for each thread to avoid contention
-    std::vector<tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual>> localMaps(tbb::this_task_arena::current_thread_index() + 1);
+    // Step 1: Create a thread-local map for each thread to avoid contention
+    // We use a vector of `tsl::robin_map`, one for each thread
+    size_t threadCount = tbb::this_task_arena::max_concurrency();
+    std::vector<tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual>> localMaps(threadCount);
 
-    tbb::parallel_for(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& item) {
+    // Step 2: Process `occupancyMap_` in parallel using `tbb::parallel_for_each`
+    tbb::parallel_for_each(occupancyMap_.begin(), occupancyMap_.end(), [&](const auto& item) {
+        // If the voxel is not flagged for removal
         if (item.second.removalReason == RemovalReason::None) {
-            // Get the local map corresponding to the current thread
+            // Identify the current thread's local map
             auto& localMap = localMaps[tbb::this_task_arena::current_thread_index()];
-            localMap[item.first] = item.second;  // Add item to the thread-local map
+            // Add the voxel to the thread-local map
+            localMap[item.first] = item.second;
         }
     });
 
-    // Merge all thread-local maps into the final newOccupancyMap
+    // Step 3: Merge all thread-local maps into a single `newOccupancyMap`
     tsl::robin_map<Eigen::Vector3i, VoxelData, Vector3iHash, Vector3iEqual> newOccupancyMap;
-    for (auto& localMap : localMaps) {
+    for (const auto& localMap : localMaps) {
+        // Use `insert` to merge each local map into the final map
         newOccupancyMap.insert(localMap.begin(), localMap.end());
     }
 
-    // Replace the old map with the new map
+    // Step 4: Replace the old map with the new one
     std::swap(occupancyMap_, newOccupancyMap);
 }
 
