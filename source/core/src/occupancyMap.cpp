@@ -48,10 +48,10 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
     insertPointCloud(pointCloud, reflectivity, intensity, NIR);
 
     // Step 2: Mark voxels for clearing
-    markVoxelsForClearing();
+    //markVoxelsForClearing();
 
     // Step 3: Remove flagged voxels
-    removeFlaggedVoxels();
+    //removeFlaggedVoxels();
 
     // std::cout << "Function OccupancyMap running okay.\n";
 }
