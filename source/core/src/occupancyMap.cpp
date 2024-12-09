@@ -53,7 +53,7 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
     // Step 3: Remove flagged voxels
     removeFlaggedVoxels();
 
-    std::cout << "Function OccupancyMap running okay.\n";
+    // std::cout << "Function OccupancyMap running okay.\n";
 }
 
 // -----------------------------------------------------------------------------
