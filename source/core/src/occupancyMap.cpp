@@ -234,7 +234,7 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
     int error1 = 2 * delta[(primaryAxis + 1) % 3] - delta[primaryAxis];
     int error2 = 2 * delta[(primaryAxis + 2) % 3] - delta[primaryAxis];
 
-    // Traverse the line using Bresenham's algorithm
+    // Traverse the line using Bresenham's algorithm, stopping before reaching endVoxel
     for (int i = 0; i < delta[primaryAxis]; ++i) {
         currentVoxel[primaryAxis] += step[primaryAxis];
 
@@ -250,6 +250,11 @@ std::vector<Eigen::Vector3i> OccupancyMap::performRaycast(const Eigen::Vector3f&
 
         error1 += 2 * delta[(primaryAxis + 1) % 3];
         error2 += 2 * delta[(primaryAxis + 2) % 3];
+
+        // Stop if the next voxel would be the endVoxel
+        if (currentVoxel == endVoxel) {
+            break;
+        }
 
         // Add the current voxel to the result
         voxelIndices.push_back(currentVoxel);
@@ -282,45 +287,45 @@ void OccupancyMap::markVoxelsForClearing() {
         }
     });
 
-    // // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
-    // tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
-    //     const auto& [gridIndex, voxel] = insertedEntry;
+    // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
+    tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
+        const auto& [gridIndex, voxel] = insertedEntry;
 
-    //     auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
+        auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
 
-    //     {
-    //         // Check the start-end pair cache with a thread-safe lock
-    //         std::lock_guard<std::mutex> lock(cacheMutex);
-    //         auto it = startEndCache.find(rayKey);
-    //         if (it != startEndCache.end()) {
-    //             auto& raycastVoxels = it->second;
+        {
+            // Check the start-end pair cache with a thread-safe lock
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            auto it = startEndCache.find(rayKey);
+            if (it != startEndCache.end()) {
+                auto& raycastVoxels = it->second;
 
-    //             // Process cached raycast result
-    //             for (const auto& rayVoxel : raycastVoxels) {
-    //                 std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
-    //                 auto& targetVoxel = occupancyMap_[rayVoxel];
-    //                 targetVoxel.removalReason = RemovalReason::Raycasting;
-    //             }
-    //             return;
-    //         }
-    //     }
+                // Process cached raycast result
+                for (const auto& rayVoxel : raycastVoxels) {
+                    std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
+                    auto& targetVoxel = occupancyMap_[rayVoxel];
+                    targetVoxel.removalReason = RemovalReason::Raycasting;
+                }
+                return;
+            }
+        }
 
-    //     // If no cache hit, compute raycast
-    //     auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
+        // If no cache hit, compute raycast
+        auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
 
-    //     {
-    //         // Update cache with a thread-safe lock
-    //         std::lock_guard<std::mutex> lock(cacheMutex);
-    //         startEndCache.emplace(rayKey, raycastVoxels);
-    //     }
+        {
+            // Update cache with a thread-safe lock
+            std::lock_guard<std::mutex> lock(cacheMutex);
+            startEndCache.emplace(rayKey, raycastVoxels);
+        }
 
-    //     // Process raycast result
-    //     for (const auto& rayVoxel : raycastVoxels) {
-    //         std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
-    //         auto& targetVoxel = occupancyMap_[rayVoxel];
-    //         targetVoxel.removalReason = RemovalReason::Raycasting;
-    //     }
-    // });
+        // Process raycast result
+        for (const auto& rayVoxel : raycastVoxels) {
+            std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
+            auto& targetVoxel = occupancyMap_[rayVoxel];
+            targetVoxel.removalReason = RemovalReason::Raycasting;
+        }
+    });
 }
 
 // -----------------------------------------------------------------------------
