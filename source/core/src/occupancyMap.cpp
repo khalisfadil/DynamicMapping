@@ -48,10 +48,10 @@ void OccupancyMap::runOccupancyMapPipeline(const std::vector<Eigen::Vector3f>& p
     insertPointCloud(pointCloud, reflectivity, intensity, NIR);
 
     // Step 2: Mark voxels for clearing
-    //markVoxelsForClearing();
+    markVoxelsForClearing();
 
     // Step 3: Remove flagged voxels
-    //removeFlaggedVoxels();
+    removeFlaggedVoxels();
 
     // std::cout << "Function OccupancyMap running okay.\n";
 }
@@ -282,45 +282,45 @@ void OccupancyMap::markVoxelsForClearing() {
         }
     });
 
-    // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
-    tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
-        const auto& [gridIndex, voxel] = insertedEntry;
+    // // Second parallel task: Perform raycasting for each voxel in insertedVoxels_
+    // tbb::parallel_for_each(insertedVoxels_.begin(), insertedVoxels_.end(), [&](const auto& insertedEntry) {
+    //     const auto& [gridIndex, voxel] = insertedEntry;
 
-        auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
+    //     auto rayKey = std::make_pair(worldToGrid(vehiclePosition_), worldToGrid(voxel.centerPosition));
 
-        {
-            // Check the start-end pair cache with a thread-safe lock
-            std::lock_guard<std::mutex> lock(cacheMutex);
-            auto it = startEndCache.find(rayKey);
-            if (it != startEndCache.end()) {
-                auto& raycastVoxels = it->second;
+    //     {
+    //         // Check the start-end pair cache with a thread-safe lock
+    //         std::lock_guard<std::mutex> lock(cacheMutex);
+    //         auto it = startEndCache.find(rayKey);
+    //         if (it != startEndCache.end()) {
+    //             auto& raycastVoxels = it->second;
 
-                // Process cached raycast result
-                for (const auto& rayVoxel : raycastVoxels) {
-                    std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
-                    auto& targetVoxel = occupancyMap_[rayVoxel];
-                    targetVoxel.removalReason = RemovalReason::Raycasting;
-                }
-                return;
-            }
-        }
+    //             // Process cached raycast result
+    //             for (const auto& rayVoxel : raycastVoxels) {
+    //                 std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
+    //                 auto& targetVoxel = occupancyMap_[rayVoxel];
+    //                 targetVoxel.removalReason = RemovalReason::Raycasting;
+    //             }
+    //             return;
+    //         }
+    //     }
 
-        // If no cache hit, compute raycast
-        auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
+    //     // If no cache hit, compute raycast
+    //     auto raycastVoxels = performRaycast(vehiclePosition_, voxel.centerPosition);
 
-        {
-            // Update cache with a thread-safe lock
-            std::lock_guard<std::mutex> lock(cacheMutex);
-            startEndCache.emplace(rayKey, raycastVoxels);
-        }
+    //     {
+    //         // Update cache with a thread-safe lock
+    //         std::lock_guard<std::mutex> lock(cacheMutex);
+    //         startEndCache.emplace(rayKey, raycastVoxels);
+    //     }
 
-        // Process raycast result
-        for (const auto& rayVoxel : raycastVoxels) {
-            std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
-            auto& targetVoxel = occupancyMap_[rayVoxel];
-            targetVoxel.removalReason = RemovalReason::Raycasting;
-        }
-    });
+    //     // Process raycast result
+    //     for (const auto& rayVoxel : raycastVoxels) {
+    //         std::lock_guard<std::mutex> lock(occupancyMapMutex); // Ensure thread-safe access
+    //         auto& targetVoxel = occupancyMap_[rayVoxel];
+    //         targetVoxel.removalReason = RemovalReason::Raycasting;
+    //     }
+    // });
 }
 
 // -----------------------------------------------------------------------------
