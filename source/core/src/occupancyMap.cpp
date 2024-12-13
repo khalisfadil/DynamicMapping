@@ -195,8 +195,8 @@ void OccupancyMap::insertPointCloud(const std::vector<Eigen::Vector3f>& pointClo
         // Track this voxel’s gridIndex in insertedVoxels_ for the current frame
         insertedVoxels_[gridIndex] = voxel;
     }
-    std::cout << "[OccupancyMap] Function (insertPointCloud) running okay. occupancyMap_: " << occupancyMap_.size() << "\n";
-    std::cout << "[OccupancyMap] Function (insertPointCloud) running okay. insertedVoxels_: " << insertedVoxels_.size() << "\n";
+    //std::cout << "[OccupancyMap] Function (insertPointCloud) running okay. occupancyMap_: " << occupancyMap_.size() << "\n";
+    //std::cout << "[OccupancyMap] Function (insertPointCloud) running okay. insertedVoxels_: " << insertedVoxels_.size() << "\n";
 }
 
 // -----------------------------------------------------------------------------

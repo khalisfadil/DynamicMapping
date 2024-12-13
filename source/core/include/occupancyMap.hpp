@@ -363,7 +363,29 @@ class OccupancyMap {
          * last updated and helps distinguish changes between successive frames.
          */
         uint32_t currentFrame_;
-
+        
+        /**
+         * @brief Mutex for synchronizing access to the occupancy map data.
+         *
+         * @details This mutex is used to protect shared occupancy map data that is accessed 
+         * and modified by multiple threads. It ensures thread-safe operations by preventing 
+         * simultaneous read and write access, thus avoiding data races and ensuring consistency. 
+         *
+         * Typical use cases include:
+         * - Protecting updates to the occupancy map during pipeline processing.
+         * - Preventing premature or inconsistent data access during visualization.
+         *
+         * Threads accessing shared occupancy map data should lock this mutex 
+         * using `std::lock_guard` or `std::unique_lock` to ensure thread safety.
+         *
+         * Example:
+         * @code
+         * {
+         *     std::lock_guard<std::mutex> lock(occupancyMapMutex);
+         *     // Access or modify the shared occupancy map data here
+         * }
+         * @endcode
+         */
         std::mutex occupancyMapMutex;
 
         // -----------------------------------------------------------------------------
