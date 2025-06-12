@@ -18,14 +18,15 @@ namespace dynamicMap {
 
             // -----------------------------------------------------------------------------
 
-            explicit Map(int default_lifetime) : default_lifetime_(default_lifetime) {}
+            explicit Map(int default_lifetime = 10) : default_lifetime_(default_lifetime) {}
 
             // -----------------------------------------------------------------------------
 
             [[nodiscard]] ArrayVector3d pointcloud() const {
                 ArrayVector3d points;
-                points.reserve(size());
-                for (const auto& [_, block] : voxel_map_) {
+                points.reserve(total_num_points_); // Use tracked total number of points
+                for (const auto& pair : voxel_map_) {
+                    const auto& block = pair.second;
                     points.insert(points.end(), block.points.begin(), block.points.end());
                 }
                 return points;
@@ -34,26 +35,30 @@ namespace dynamicMap {
             // -----------------------------------------------------------------------------
 
             [[nodiscard]] size_t size() const {
-                size_t map_size = 0;
-                for (const auto& [_, block] : voxel_map_) {
-                    map_size += block.NumPoints();
-                }
-                return map_size;
+                return total_num_points_;
             }
 
             // -----------------------------------------------------------------------------
-
+            
+            // This method removes voxels where the *first point* in the voxel is *further* than 'distance'
+            // from 'location'. Effectively, it keeps voxels within a certain radius.
             void remove(const Eigen::Vector3d& location, double distance) {
                 std::vector<Voxel> voxels_to_erase;
                 voxels_to_erase.reserve(voxel_map_.size() / 10); // Heuristic reservation
                 const double sq_distance = distance * distance;
-                for (const auto& [voxel, block] : voxel_map_) {
+                for (const auto& pair : voxel_map_) {
+                    const auto& voxel = pair.first;
+                    const auto& block = pair.second;
                     if (!block.points.empty() && (block.points[0] - location).squaredNorm() > sq_distance) {
                         voxels_to_erase.push_back(voxel);
                     }
                 }
                 for (const auto& voxel : voxels_to_erase) {
-                    voxel_map_.erase(voxel);
+                    auto it = voxel_map_.find(voxel);
+                    if (it != voxel_map_.end()) {
+                        total_num_points_ -= it->second.NumPoints();
+                        voxel_map_.erase(it);
+                    }
                 }
             }
 
@@ -61,24 +66,33 @@ namespace dynamicMap {
 
             void update_and_filter_lifetimes() {
                 std::vector<Voxel> voxels_to_erase;
-                for (VoxelHashMap::iterator it = voxel_map_.begin(); it != voxel_map_.end(); it++) {
+                // Reserve based on a heuristic, e.g. 10% of map or a fixed typical number
+                voxels_to_erase.reserve(voxel_map_.size() / 10 + 1); 
+                for (auto it = voxel_map_.begin(); it != voxel_map_.end(); ++it) {
                     auto& voxel_block = it.value();
                     voxel_block.life_time -= 1;
                     if (voxel_block.life_time <= 0) voxels_to_erase.push_back(it->first);
                 }
-                for (auto &vox : voxels_to_erase) voxel_map_.erase(vox);
+                for (const auto &vox_key : voxels_to_erase) {
+                    auto it = voxel_map_.find(vox_key);
+                    if (it != voxel_map_.end()) {
+                        total_num_points_ -= it->second.NumPoints();
+                        voxel_map_.erase(it);
+                    }
+                }
             }
 
             // -----------------------------------------------------------------------------
 
-            void setDefaultLifeTime(int default_lifetime) { 
+            void setDefaultLifeTime(int16_t default_lifetime) {
                 default_lifetime_ = default_lifetime; 
             }
 
             // -----------------------------------------------------------------------------
 
             void clear() { 
-                voxel_map_.clear(); 
+                voxel_map_.clear();
+                total_num_points_ = 0; 
             }
 
             // -----------------------------------------------------------------------------
@@ -102,40 +116,40 @@ namespace dynamicMap {
             // -----------------------------------------------------------------------------
 
             void add(const Eigen::Vector3d &point, double voxel_size, int max_num_points_in_voxel, double min_distance_points, int min_num_points = 0) {
-                int16_t kx = static_cast<int16_t>(point[0] / voxel_size);
-                int16_t ky = static_cast<int16_t>(point[1] / voxel_size);
-                int16_t kz = static_cast<int16_t>(point[2] / voxel_size);
-
-                VoxelHashMap::iterator search = voxel_map_.find(Voxel(kx, ky, kz));
-                if (search != voxel_map_.end()) {
-
-                    auto &voxel_block = (search.value());
+                Voxel voxel_key = Voxel::Coordinates(point, voxel_size);
+                auto it = voxel_map_.find(voxel_key);
+                
+                if (it != voxel_map_.end()) {
+                    auto &voxel_block = it.value();
 
                     if (!voxel_block.IsFull()) {
-                        double sq_dist_min_to_points = 10 * voxel_size * voxel_size;
+                        double sq_dist_min_to_points = std::numeric_limits<double>::max();
 
-                        for (int i(0); i < voxel_block.NumPoints(); ++i) {
-                            auto &_point = voxel_block.points[i];
-                            double sq_dist = (_point - point).squaredNorm();
+                        for (const auto& existing_point : voxel_block.points) {
+                            double sq_dist = (existing_point - point).squaredNorm();
                             if (sq_dist < sq_dist_min_to_points) {
                                 sq_dist_min_to_points = sq_dist;
                             }
                         }
 
                         if (sq_dist_min_to_points > (min_distance_points * min_distance_points)) {
+                            // Add point if min_num_points requirement is met OR not applicable
                             if (min_num_points <= 0 || voxel_block.NumPoints() >= min_num_points) {
-                                voxel_block.AddPoint(point);
+                                if (voxel_block.AddPoint(point)) {
+                                    total_num_points_++;
+                                }
                             }
                         }
                     }
                     voxel_block.life_time = default_lifetime_;
                 } else {
-                    if (min_num_points <= 0) {
-                        // Do not add points (avoids polluting the map)
-                        VoxelBlock block(max_num_points_in_voxel);
-                        block.AddPoint(point);
+                    // Always create a new voxel with the first point.
+                    // The min_num_points parameter applies to adding more points to an existing voxel.
+                    VoxelBlock block(max_num_points_in_voxel);
+                    if (block.AddPoint(point)) { // Should always be true for a new block
+                        total_num_points_++;
                         block.life_time = default_lifetime_;
-                        voxel_map_[Voxel(kx, ky, kz)] = std::move(block);
+                        voxel_map_.emplace(voxel_key, std::move(block));
                     }
                 }
             }
@@ -172,18 +186,11 @@ namespace dynamicMap {
                 // Initialize min-heap for closest points
                 priority_queue_t priority_queue;
 
-                // Precompute search bounds
-                const int16_t x_min = kx - nb_voxels_visited;
-                const int16_t x_max = kx + nb_voxels_visited + 1;
-                const int16_t y_min = ky - nb_voxels_visited;
-                const int16_t y_max = ky + nb_voxels_visited + 1;
-                const int16_t z_min = kz - nb_voxels_visited;
-                const int16_t z_max = kz + nb_voxels_visited + 1;
-
                 // Track max distance for pruning
                 double max_distance = std::numeric_limits<double>::max();
 
                 // Spiral traversal: process voxels layer by layer
+                // The loop structure inherently keeps voxels within the desired cubic radius.
                 for (int16_t d = 0; d <= nb_voxels_visited; ++d) {
                     for (int16_t dx = -d; dx <= d; ++dx) {
                         for (int16_t dy = -d; dy <= d; ++dy) {
@@ -192,11 +199,6 @@ namespace dynamicMap {
                                 if (std::abs(dx) != d && std::abs(dy) != d && std::abs(dz) != d) continue;
 
                                 Voxel voxel{kx + dx, ky + dy, kz + dz};
-
-                                // Skip out-of-bounds voxels
-                                if (voxel.x < x_min || voxel.x >= x_max ||
-                                    voxel.y < y_min || voxel.y >= y_max ||
-                                    voxel.z < z_min || voxel.z >= z_max) continue;
 
                                 // Early pruning: skip voxels too far away
                                 Eigen::Vector3d voxel_center(
@@ -326,13 +328,18 @@ namespace dynamicMap {
 
                 // Remove all collected voxels from voxel_map_
                 for (const auto& voxel : voxel_indices) {
-                    voxel_map_.erase(voxel);
+                    auto it = voxel_map_.find(voxel);
+                    if (it != voxel_map_.end()) {
+                        total_num_points_ -= it->second.NumPoints();
+                        voxel_map_.erase(it);
+                    }
                 }
             }
 
         private:
             VoxelHashMap voxel_map_;
             int default_lifetime_ = 10;
+            size_t total_num_points_ = 0;
     };
 
 } // namespace dynamicMap
