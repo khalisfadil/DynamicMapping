@@ -42,7 +42,7 @@ namespace dynamicMap {
             
             // This method removes voxels where the *first point* in the voxel is *further* than 'distance'
             // from 'location'. Effectively, it keeps voxels within a certain radius.
-            void remove(const Eigen::Vector3d& location, double distance) {
+            void removeOutliers(const Eigen::Vector3d& location, double distance) {
                 std::vector<Voxel> voxels_to_erase;
                 voxels_to_erase.reserve(voxel_map_.size() / 10); // Heuristic reservation
                 const double sq_distance = distance * distance;
@@ -329,6 +329,52 @@ namespace dynamicMap {
                 // Remove all collected voxels from voxel_map_
                 for (const auto& voxel : voxel_indices) {
                     auto it = voxel_map_.find(voxel);
+                    if (it != voxel_map_.end()) {
+                        total_num_points_ -= it->second.NumPoints();
+                        voxel_map_.erase(it);
+                    }
+                }
+            }
+
+            // -----------------------------------------------------------------------------
+
+            void removeIsolatedVoxels(int neighbor_search_radius = 1) {
+                if (voxel_map_.empty() || neighbor_search_radius < 0) {
+                    return;
+                }
+
+                std::vector<Voxel> voxels_to_erase;
+                // Reserve conservatively, actual number of isolated voxels might be small
+                voxels_to_erase.reserve(voxel_map_.size() / 20 + 1); 
+
+                for (const auto& pair : voxel_map_) {
+                    const Voxel& current_voxel_key = pair.first;
+                    bool has_neighbor = false;
+
+                    for (int16_t dx = -neighbor_search_radius; dx <= neighbor_search_radius; ++dx) {
+                        for (int16_t dy = -neighbor_search_radius; dy <= neighbor_search_radius; ++dy) {
+                            for (int16_t dz = -neighbor_search_radius; dz <= neighbor_search_radius; ++dz) {
+                                if (dx == 0 && dy == 0 && dz == 0) {
+                                    continue; // Skip the voxel itself
+                                }
+                                Voxel neighbor_key(current_voxel_key.x + dx, 
+                                                   current_voxel_key.y + dy, 
+                                                   current_voxel_key.z + dz);
+                                if (voxel_map_.count(neighbor_key)) {
+                                    has_neighbor = true;
+                                    goto next_voxel_check; // Found a neighbor, move to the next voxel
+                                }
+                            }
+                        }
+                    }
+                    next_voxel_check:;
+                    if (!has_neighbor) {
+                        voxels_to_erase.push_back(current_voxel_key);
+                    }
+                }
+
+                for (const auto& voxel_key : voxels_to_erase) {
+                    auto it = voxel_map_.find(voxel_key);
                     if (it != voxel_map_.end()) {
                         total_num_points_ -= it->second.NumPoints();
                         voxel_map_.erase(it);
