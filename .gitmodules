@@ -4,3 +4,6 @@
 [submodule "extern/LidarDecode"]
 	path = extern/LidarDecode
 	url = https://github.com/khalisfadil/LidarDecode.git
+[submodule "extern/GNSSKompass"]
+	path = extern/GNSSKompass
+	url = https://github.com/khalisfadil/GNSSKompass.git
