@@ -12,7 +12,7 @@ target.terminateAtCPUOverload = false;
 target.targetSoftwareDirectory = '~/GT/sendPoints/';
 target.targetBitmaskCPUCores = '0x0000F000';
 
-target.additionalCompilerFlags.DEBUG_MODE = true;
+%target.additionalCompilerFlags.DEBUG_MODE = true;
 %target.portAppSocket = 65535;
 % target.DownloadAllData; % to download all log data
 %GT.DecodeDataFiles; % when to read log file
