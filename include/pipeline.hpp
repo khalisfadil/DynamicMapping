@@ -21,8 +21,8 @@ namespace dynamicMap {
 
             static std::atomic<bool> running_;
             static std::condition_variable globalCV_;
-            static boost::lockfree::spsc_queue<LidarDataFrame, boost::lockfree::capacity<128>> decodedPoint_buffer_;
-            static boost::lockfree::spsc_queue<LidarIMUDataFrame, boost::lockfree::capacity<128>> decodedLidarIMU_buffer_;
+            static boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> decodedPoint_buffer_;
+            static boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> decodedLidarIMU_buffer_;
 
             Pipeline(const std::string& json_path); // Constructor with JSON file path
             Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
@@ -44,12 +44,12 @@ namespace dynamicMap {
             uint64_t Accelerometer_Read_Time_ = 0.0;
             uint64_t Gyroscope_Read_Time_ = 0.0;
 
-            LidarDataFrame frame_data_copy_;
+            lidarDecode::LidarDataFrame frame_data_copy_;
 
             std::shared_ptr<open3d::geometry::PointCloud> point_cloud_ptr_;
 
             bool updateVisualizer(open3d::visualization::Visualizer* vis);
-            void updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const LidarDataFrame& frame);
+            void updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const lidarDecode::LidarDataFrame& frame);
             
             std::chrono::milliseconds targetFrameDuration{100}; //30 FPS
 

@@ -12,15 +12,16 @@
 #include <LidarIMUDataFrame.hpp> // Assuming Dataframe.hpp defines the DataFrame structure
 
 namespace dynamicMap {
+
     class OusterLidarCallback {
     public:
         explicit OusterLidarCallback(const std::string& json_path);
         explicit OusterLidarCallback(const nlohmann::json& json_data);
 
-        void decode_packet_single_return(const std::vector<uint8_t>& packet, LidarDataFrame& frame);
-        void decode_packet_legacy(const std::vector<uint8_t>& packet, LidarDataFrame& frame); 
-        void decode_packet_LidarIMU(const std::vector<uint8_t>& packet, LidarIMUDataFrame& frame); 
-        const LidarDataFrame& get_latest_lidar_frame() const { return buffer_toggle_ ? data_buffer1_ : data_buffer2_; }
+        void decode_packet_single_return(const std::vector<uint8_t>& packet, lidarDecode::LidarDataFrame& frame);
+        void decode_packet_legacy(const std::vector<uint8_t>& packet, lidarDecode::LidarDataFrame& frame); 
+        void decode_packet_LidarIMU(const std::vector<uint8_t>& packet, lidarDecode::LidarIMUDataFrame& frame); 
+        const lidarDecode::LidarDataFrame& get_latest_lidar_frame() const { return buffer_toggle_ ? data_buffer1_ : data_buffer2_; }
         const nlohmann::json& get_metadata() const { return metadata_; }
 
     private:
@@ -69,8 +70,8 @@ namespace dynamicMap {
         double latest_timestamp_s = 0.0; // Timestamp of the latest processed column block
 
         // Double buffers for point cloud data
-        LidarDataFrame data_buffer1_;
-        LidarDataFrame data_buffer2_;
+        lidarDecode::LidarDataFrame data_buffer1_;
+        lidarDecode::LidarDataFrame data_buffer2_;
         bool buffer_toggle_ = true; // true: data_buffer1_ is read_buffer, data_buffer2_ is write_buffer
                                 // false: data_buffer2_ is read_buffer, data_buffer1_ is write_buffer
 

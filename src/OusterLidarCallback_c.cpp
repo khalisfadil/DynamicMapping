@@ -250,7 +250,7 @@ namespace dynamicMap {
 
     // -----------------------------------------------------------------------------
 
-    void OusterLidarCallback::decode_packet_single_return(const std::vector<uint8_t>& packet, LidarDataFrame& frame) {
+    void OusterLidarCallback::decode_packet_single_return(const std::vector<uint8_t>& packet, lidarDecode::LidarDataFrame& frame) {
         if (packet.size() != expected_size_) {
             std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
             return;
@@ -268,7 +268,7 @@ namespace dynamicMap {
         std::memcpy(&current_packet_frame_id_raw, packet.data() + 2, sizeof(uint16_t)); // frame_id is at offset 2
         uint16_t current_packet_frame_id = le16toh(current_packet_frame_id_raw);
 
-        LidarDataFrame* p_current_write_buffer;
+        lidarDecode::LidarDataFrame* p_current_write_buffer;
         if (buffer_toggle_) { // true: data_buffer1_ is read, data_buffer2_ is write
             p_current_write_buffer = &data_buffer2_;
         } else { // false: data_buffer2_ is read, data_buffer1_ is write
@@ -503,13 +503,13 @@ namespace dynamicMap {
 
     // -----------------------------------------------------------------------------
 
-    void OusterLidarCallback::decode_packet_legacy(const std::vector<uint8_t>& packet, LidarDataFrame& frame) {
+    void OusterLidarCallback::decode_packet_legacy(const std::vector<uint8_t>& packet, lidarDecode::LidarDataFrame& frame) {
         if (packet.size() != expected_size_) {
             std::cerr << "Invalid packet size: " << packet.size() << ", expected: " << expected_size_ << std::endl;
             return;
         }
 
-        LidarDataFrame* p_current_write_buffer;
+        lidarDecode::LidarDataFrame* p_current_write_buffer;
         if (buffer_toggle_) {
             p_current_write_buffer = &data_buffer2_;
         } else {
@@ -737,7 +737,7 @@ namespace dynamicMap {
 
     // -----------------------------------------------------------------------------
 
-    void OusterLidarCallback::decode_packet_LidarIMU(const std::vector<uint8_t>& packet, LidarIMUDataFrame& frame) {
+    void OusterLidarCallback::decode_packet_LidarIMU(const std::vector<uint8_t>& packet, lidarDecode::LidarIMUDataFrame& frame) {
             // Expected IMU packet size: 48 bytes (8+8+8+4+4+4+4+4+4)
             const size_t EXPECTED_IMU_PACKET_SIZE = 48;
             if (packet.size() != EXPECTED_IMU_PACKET_SIZE) {

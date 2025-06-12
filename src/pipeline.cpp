@@ -4,8 +4,8 @@ namespace dynamicMap {
 
     std::atomic<bool> Pipeline::running_{true};
     std::condition_variable Pipeline::globalCV_;
-    boost::lockfree::spsc_queue<LidarDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedPoint_buffer_;
-    boost::lockfree::spsc_queue<LidarIMUDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedLidarIMU_buffer_;
+    boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedPoint_buffer_;
+    boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedLidarIMU_buffer_;
 
     // -----------------------------------------------------------------------------
 
@@ -67,7 +67,7 @@ namespace dynamicMap {
         }
 
         try {
-        UdpSocket listener(ioContext, host, port,
+        lidarDecode::UdpSocket listener(ioContext, host, port,
             // Lambda callback:
             [&](const std::vector<uint8_t>& packet_data) {
                 // LidarDataFrame frame_data_copy; // 1. Local DataFrame created.
@@ -161,7 +161,7 @@ namespace dynamicMap {
         }
 
         try {
-        UdpSocket listener(ioContext, host, port,
+        lidarDecode::UdpSocket listener(ioContext, host, port,
             // Lambda callback:
             [&](const std::vector<uint8_t>& packet_data) {
                 // LidarDataFrame frame_data_copy; // 1. Local DataFrame created.
@@ -255,10 +255,10 @@ namespace dynamicMap {
         }
 
         try {
-        UdpSocket listener(ioContext, host, port,
+        lidarDecode::UdpSocket listener(ioContext, host, port,
             // Lambda callback:
             [&](const std::vector<uint8_t>& packet_data) {
-                LidarIMUDataFrame frame_data_IMU_copy; // 1. Local DataFrame created.
+                lidarDecode::LidarIMUDataFrame frame_data_IMU_copy; // 1. Local DataFrame created.
                                         //    It will hold a deep copy of the lidar data.
 
                 // 2. lidarCallback processes the packet.
@@ -413,13 +413,13 @@ namespace dynamicMap {
         // you'd need a static `last_render_timepoint`.
         auto call_start_time = std::chrono::steady_clock::now();
 
-        LidarDataFrame frame_to_display;
+        lidarDecode::LidarDataFrame frame_to_display;
         bool new_frame_available = false;
         auto& view_control = vis_ptr->GetViewControl();
 
         // Consume all frames currently in the buffer, but only process the latest one for display.
         // This helps the visualizer "catch up" if the producer is faster.
-        LidarDataFrame temp_frame;
+        lidarDecode::LidarDataFrame temp_frame;
         while (decodedPoint_buffer_.pop(temp_frame)) {
             frame_to_display = std::move(temp_frame); // Keep moving the latest popped frame
             new_frame_available = true;
@@ -456,7 +456,7 @@ namespace dynamicMap {
 
     // -----------------------------------------------------------------------------
 
-    void Pipeline::updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const LidarDataFrame& frame) {
+    void Pipeline::updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const lidarDecode::LidarDataFrame& frame) {
         if (!ptCloud_ptr) return; // Should not happen if initialized, but good check
 
         if (frame.numberpoints <= 0) {
