@@ -6,7 +6,9 @@ namespace dynamicMap {
     std::condition_variable Pipeline::globalCV_;
     boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedPoint_buffer_;
     boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedLidarIMU_buffer_;
-
+    boost::lockfree::spsc_queue<std::vector<decodeNav::DataFrameNavMsg>, boost::lockfree::capacity<128>> Pipeline::decodedNav_buffer_;
+    boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128>> Pipeline::interpolatedNav_buffer_;
+    boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128>> Pipeline::vizu_buffer_;
     // -----------------------------------------------------------------------------
 
     Pipeline::Pipeline(const std::string& json_path) : lidarCallback(json_path) {}
@@ -236,7 +238,6 @@ namespace dynamicMap {
         std::lock_guard<std::mutex> lock(consoleMutex);
         std::cerr << "[Pipeline] Ouster LiDAR listener stopped." << std::endl;
     }
-
 
     // -----------------------------------------------------------------------------
 
@@ -488,7 +489,7 @@ namespace dynamicMap {
                         // Push the copy into the SPSC queue
                         if (!interpolatedNav_buffer_.push(interpolatedData)) {
                             std::lock_guard<std::mutex> lock(consoleMutex);
-                            std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Nav might be full." << std::endl;
+                            std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer interpolatedData might be full." << std::endl;
                         }
 
                     } else if (lidar_time > max_nav_time){
@@ -521,9 +522,8 @@ namespace dynamicMap {
         constexpr int max_num_points_in_voxel = 10; // Max points per voxel
         constexpr double min_distance_points = 0.01; // Min distance between points in a voxel
         constexpr int min_num_points = 1; // Min points required in a voxel before adding more
-
-        try {
-            while (running_.load(std::memory_order_acquire)) {
+        while (running_.load(std::memory_order_acquire)) {
+            try {
                 if (interpolatedNav_buffer_.empty()) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
@@ -537,7 +537,7 @@ namespace dynamicMap {
                 }
 
                 // Get point cloud as std::vector<lidarDecode::Point3D>
-                std::vector<lidarDecode::Point3D> point_cloud = temp_NavData.lidar_data.toPoint3D();
+                std::vector<lidarDecode::Points3D> point_cloud = temp_NavData.lidar_data.toPoints3D();
 
                 if (point_cloud.empty()) {
                     std::lock_guard<std::mutex> lock(consoleMutex);
@@ -545,23 +545,227 @@ namespace dynamicMap {
                             << temp_NavData.lidar_data.frame_id << "." << std::endl;
                     continue;
                 }
-
+                Eigen::Vector3d local_pose;
+                local_pose << temp_NavData.N,temp_NavData.E,temp_NavData.D;
+                
                 // Add points to the map
                 map_.add(point_cloud, voxel_size, max_num_points_in_voxel, min_distance_points, min_num_points);
+                
+                // raycast points to the map
+                map_.raycast(local_pose, point_cloud, voxel_size);
+
+                //remove isolated voxel
+                map_.removeIsolatedVoxels();
 
                 // Update voxel lifetimes
                 map_.update_and_filter_lifetimes();
 
+                ArrayVector3d currmapArray = map_.pointcloud();
+                Eigen::Matrix4d currT = temp_NavData.T;
+
+                vizuFrame_.pointcloud = currmapArray;
+                vizuFrame_.T = currT;
+                
+                // Push the copy into the SPSC queue
+                if (!vizu_buffer_.push(vizuFrame_)) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Nav might be full." << std::endl;
+                }
+
                 // Log success
                 std::lock_guard<std::mutex> lock(consoleMutex);
-                std::cout << "[Pipeline] updateOccMap: Added " << points.size()
+                std::cout << "[Pipeline] updateOccMap: Added " << point_cloud.size()
                         << " points to map for frame ID " << temp_NavData.lidar_data.frame_id
                         << ". Total map size: " << map_.size() << " points." << std::endl;
+            
+            } catch (const std::exception& e) {
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cerr << "[Pipeline] updateOccMap: Exception occurred: " << e.what() << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
             }
-        } catch (const std::exception& e) {
-            std::lock_guard<std::mutex> lock(consoleMutex);
-            std::cerr << "[Pipeline] updateOccMap: Exception occurred: " << e.what() << std::endl;
         }
     }
+
+    // -----------------------------------------------------------------------------
+
+    void Pipeline::runVisualizer(const std::vector<int>& allowedCores) {
+        setThreadAffinity(allowedCores);
+
+        try {
+            if (!vis.CreateVisualizerWindow("3D Point Cloud Visualization", 2560, 1440, 50, 50, true)) { // Added visible=true
+                { // Scope for lock
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] Visualizer: Failed to create window." << std::endl;
+                }
+                return;
+            }
+            // Access render option after window creation
+            vis.GetRenderOption().background_color_ = Eigen::Vector3d(1, 1, 1); // Dark grey background
+            vis.GetRenderOption().point_size_ = 1.0; // Slightly larger points
+
+            // Setup camera
+            auto& view_control = vis.GetViewControl();
+            view_control.SetLookat({0.0, 0.0, 0.0});    // Look at origin
+            view_control.SetFront({0.0, 0.0, -1.0}); // Camera slightly tilted down, looking from +Y
+            view_control.SetUp({0.0, 1.0, 0.0});     // Z is up
+            // view_control.Scale(0.1);               // Zoom level (smaller value = more zoomed in)
+
+            // Initialize point_cloud_ptr_ if it hasn't been already
+            if (!point_cloud_ptr_) {
+                point_cloud_ptr_ = std::make_shared<open3d::geometry::PointCloud>();
+                // Optionally add a placeholder point if you want to see something before data arrives,
+                // or leave it empty. updatePtCloudStream will handle empty frames.
+                point_cloud_ptr_->points_.push_back(Eigen::Vector3d(0, 0, 0));
+                point_cloud_ptr_->colors_.push_back(Eigen::Vector3d(1, 0, 0)); 
+            }
+            vis.AddGeometry(point_cloud_ptr_);
+
+            if (!vehiclemesh_ptr_) {
+                    vehiclemesh_ptr_ = createVehicleMesh(Eigen::Matrix4d::Identity()); // Default vehicle at origin
+                }
+            vis.AddGeometry(vehiclemesh_ptr_);
+
+
+            // Add a coordinate frame for reference
+            auto coord_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(5.0); // Size 1.0 meter
+            vis.AddGeometry(coord_frame);
+
+            // Register the animation callback
+            // The lambda captures 'this' to call the member function updateVisualizer.
+            vis.RegisterAnimationCallback([this](open3d::visualization::Visualizer* callback_vis_ptr) {
+                // 'this->' is optional for member function calls but can improve clarity
+                return this->updateVisualizer(callback_vis_ptr);
+            });
+            
+            { // Scope for lock
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cerr << "[Pipeline] Visualizer: Starting Open3D event loop." << std::endl;
+            }
+
+            vis.Run(); // This blocks until the window is closed or animation callback returns false
+
+            // Clean up
+            vis.DestroyVisualizerWindow();
+            { // Scope for lock
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cerr << "[Pipeline] Visualizer: Open3D event loop finished." << std::endl;
+            }
+
+        } catch (const std::exception& e) {
+            { // Scope for lock
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cerr << "[Pipeline] Visualizer: Exception caught: " << e.what() << std::endl;
+            }
+            // Ensure window is destroyed even if an exception occurs mid-setup (if vis is valid)
+            if (vis.GetWindowName() != "") { // A simple check if window might have been created
+                vis.DestroyVisualizerWindow();
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------------
+
+    bool Pipeline::updateVisualizer(open3d::visualization::Visualizer* vis_ptr) {
+        constexpr double smoothingFactor = 0.1;
+        // Record start time for frame rate limiting (measures processing time of this function)
+        // If you want to limit to an absolute FPS regardless of processing time,
+        // you'd need a static `last_render_timepoint`.
+        auto call_start_time = std::chrono::steady_clock::now();
+
+        VizuDataFrame frame_to_display;
+        bool new_frame_available = false;
+        auto& view_control = vis_ptr->GetViewControl();
+
+        // Consume all frames currently in the buffer, but only process the latest one for display.
+        // This helps the visualizer "catch up" if the producer is faster.
+        VizuDataFrame temp_frame;
+        while (vizu_buffer_.pop(temp_frame)) {
+            frame_to_display = std::move(temp_frame); // Keep moving the latest popped frame
+            new_frame_available = true;
+        }
+
+        bool geometry_needs_update = false;
+        if (new_frame_available) {
+            // Process the latest available frame
+            // The condition `frame_to_display.numberpoints > 0` is implicitly handled
+            // by updatePtCloudStream, which will clear the cloud if numberpoints is 0.
+            // std::cerr << "numpoint in decoded: " << frame_to_display.numberpoints << std::endl; //both show same value
+            updateStream(point_cloud_ptr_, vehiclemesh_ptr_, frame_to_display);
+            geometry_needs_update = true; // Assume geometry changed if we processed a new frame
+        }
+
+        if (geometry_needs_update) {
+            vis_ptr->UpdateGeometry(point_cloud_ptr_); // Tell Open3D to refresh this geometry
+            if(vis_ptr->UpdateGeometry(vehiclemesh_ptr_)){
+                Eigen::Vector3d targetLookat;
+                targetLookat << frame_to_display.T(0,3),frame_to_display.T(1,3),frame_to_display.T(2,3);
+                currentLookat_ = currentLookat_ + smoothingFactor * (targetLookat - currentLookat_);
+            }
+            view_control.SetLookat(currentLookat_);
+            view_control.SetFront({0.0, 0.0, -1.0}); // Camera slightly tilted down, looking from +Y
+            view_control.SetUp({0.0, 1.0, 0.0});
+            // std::cerr << "numpoint in visualizer: " << point_cloud_ptr_->points_.size() << std::endl; // both show same value
+        }
+
+        // Frame rate limiter: ensure this function call (including processing and sleep)
+        // takes at least targetFrameDuration.
+        auto processing_done_time = std::chrono::steady_clock::now();
+        auto processing_duration = std::chrono::duration_cast<std::chrono::milliseconds>(processing_done_time - call_start_time);
+
+        if (processing_duration < targetFrameDuration) {
+            std::this_thread::sleep_for(targetFrameDuration - processing_duration);
+        }
+                
+        // Return true to continue animation if the application is still running.
+        return running_.load(std::memory_order_acquire);
+    }
+
+    // -----------------------------------------------------------------------------
+
+    void Pipeline::updateStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr,
+                    std::shared_ptr<open3d::geometry::TriangleMesh>& vehiclemesh_ptr,
+                    const dynamicMap::VizuDataFrame& frame) {
+        // Validate point cloud pointer
+        if (!ptCloud_ptr) {
+            return; // Exit if point cloud is null
+        }
+
+        if (!vehiclemesh_ptr) {
+            return; // Exit if vehiclemesh is null
+        }
+
+        // Handle empty frame
+        if (frame.pointcloud.size() == 0) {
+            if (!ptCloud_ptr->IsEmpty()) {
+                ptCloud_ptr->Clear();
+            }
+            return;
+        }
+
+        // Resize point cloud vectors
+        ptCloud_ptr->points_.resize(frame.pointcloud.size());
+        ptCloud_ptr->colors_.resize(frame.pointcloud.size());
+
+        // Assign points and black colors
+        for (size_t i = 0; i < frame.pointcloud.size(); ++i) {
+            // Transform coordinates: OusterLidar (x=front, y=right, z=down) to Viz (x=front, y=-right, z=-down)
+            ptCloud_ptr->points_[i] = Eigen::Vector3d(
+                frame.pointcloud[i].x(),
+                -frame.pointcloud[i].y(),
+                -frame.pointcloud[i].z()
+            );
+            // Set color to black (RGB: 0, 0, 0)
+            ptCloud_ptr->colors_[i] = Eigen::Vector3d(0.0, 0.0, 0.0);
+        }
+
+        // Update vehicle mesh if pointer is valid
+        if (vehiclemesh_ptr) {
+            vehiclemesh_ptr = dynamicMap::createVehicleMesh(frame.T);
+        }
+    }
+
+    // -----------------------------------------------------------------------------
+
 } // namespace dynamicMap
 

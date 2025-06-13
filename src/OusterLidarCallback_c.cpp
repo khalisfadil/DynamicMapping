@@ -61,29 +61,18 @@ namespace dynamicMap {
         metadata_ = json_data_param;
 
         try {
-            if (!metadata_.contains("lidar_data_format") || !metadata_["lidar_data_format"].is_object()) {
-                throw std::runtime_error("Missing or invalid 'lidar_data_format' object");
-            }
-            if (!metadata_.contains("config_params") || !metadata_["config_params"].is_object()) {
-                throw std::runtime_error("Missing or invalid 'config_params' object");
-            }
-            if (!metadata_.contains("beam_intrinsics") || !metadata_["beam_intrinsics"].is_object()) {
-                throw std::runtime_error("Missing or invalid 'beam_intrinsics' object");
-            }
-            if (!metadata_.contains("lidar_intrinsics") || !metadata_["lidar_intrinsics"].is_object() ||
-                !metadata_["lidar_intrinsics"].contains("lidar_to_sensor_transform")) {
-                throw std::runtime_error("Missing or invalid 'lidar_intrinsics.lidar_to_sensor_transform'");
+            if (!metadata_.contains("data_format") || !metadata_["data_format"].is_object()) {
+                throw std::runtime_error("Missing or invalid 'data_format' object");
             }
 
-            columns_per_frame_ = metadata_["lidar_data_format"]["columns_per_frame"].get<int>();
-            pixels_per_column_ = metadata_["lidar_data_format"]["pixels_per_column"].get<int>();
-            columns_per_packet_ = metadata_["config_params"]["columns_per_packet"].get<int>();
-            udp_profile_lidar_ = metadata_["config_params"]["udp_profile_lidar"].get<std::string>();
+            columns_per_frame_ = metadata_["data_format"]["columns_per_frame"].get<int>();
+            pixels_per_column_ = metadata_["data_format"]["pixels_per_column"].get<int>();
+            columns_per_packet_ = metadata_["data_format"]["columns_per_packet"].get<int>();
+            udp_profile_lidar_ = metadata_["data_format"]["udp_profile_lidar"].get<std::string>();
 
-            const auto& beam_intrinsics = metadata_["beam_intrinsics"];
-            lidar_origin_to_beam_origin_mm_ = beam_intrinsics["lidar_origin_to_beam_origin_mm"].get<double>();
+            lidar_origin_to_beam_origin_mm_ = metadata_["lidar_origin_to_beam_origin_mm"].get<double>();
 
-            const auto& pixel_shift_by_row = metadata_["lidar_data_format"]["pixel_shift_by_row"];
+            const auto& pixel_shift_by_row = metadata_["data_format"]["pixel_shift_by_row"];
             if (!pixel_shift_by_row.is_array() || pixel_shift_by_row.size() != static_cast<size_t>(pixels_per_column_)) {
                 throw std::runtime_error("'pixel_shift_by_row' must be an array of " + std::to_string(pixels_per_column_) + " elements");
             }
@@ -92,7 +81,7 @@ namespace dynamicMap {
                 pixel_shifts_[i] = pixel_shift_by_row[i].get<int>();
             }
 
-            const auto& lidar_transform_json = metadata_["lidar_intrinsics"]["lidar_to_sensor_transform"];
+            const auto& lidar_transform_json = metadata_["lidar_to_sensor_transform"];
             if (!lidar_transform_json.is_array() || lidar_transform_json.size() != 16) {
                 throw std::runtime_error("'lidar_to_sensor_transform' must be an array of 16 elements");
             }
@@ -146,9 +135,8 @@ namespace dynamicMap {
         block_size_ = COLUMN_HEADER_BYTES + (pixels_per_column_ * CHANNEL_STRIDE_BYTES) + MEASUREMENT_BLOCK_STATUS_BYTES;
         expected_size_ = PACKET_HEADER_BYTES + (columns_per_packet_ * block_size_) + PACKET_FOOTER_BYTES;
 
-        const auto& beam_intrinsics = metadata_["beam_intrinsics"];
-        const auto& azimuth_angles_json = beam_intrinsics["beam_azimuth_angles"];
-        const auto& altitude_angles_json = beam_intrinsics["beam_altitude_angles"];
+        const auto& azimuth_angles_json = metadata_["beam_azimuth_angles"];
+        const auto& altitude_angles_json = metadata_["beam_altitude_angles"];
 
         if (!azimuth_angles_json.is_array() || azimuth_angles_json.size() != static_cast<size_t>(pixels_per_column_) ||
             !altitude_angles_json.is_array() || altitude_angles_json.size() != static_cast<size_t>(pixels_per_column_)) {
@@ -176,9 +164,22 @@ namespace dynamicMap {
 
         // Transformation matrix: sensor (Ouster default: x=forward, y=left, z=up) to desired ROS-like (x=front, y=right, z=down)
         Eigen::Matrix4d sensor_to_desired_transform = Eigen::Matrix4d::Identity();
-        sensor_to_desired_transform(0, 0) = -1.0;
-        sensor_to_desired_transform(1, 1) = 1.0;
-        sensor_to_desired_transform(2, 2) = -1.0;
+
+        // Set rotation matrix (3x3)
+        sensor_to_desired_transform.block<3,3>(0,0) << 
+            -0.998877689956177, -0.0426448794224395,  0.0206100646980255,
+            -0.0431892496639006,  0.998709217167348,  -0.0267317836750824,
+            -0.0194434878887628, -0.0275919155556067, -0.999430156126326;
+
+        // Set translation vector (in millimeters)
+        sensor_to_desired_transform.block<3,1>(0,3) << 
+            3.4925,    // tx
+            -0.7487,    // ty
+            -1.0887;   // tz
+        // sensor_to_desired_transform(0, 0) = -1.0;
+        // sensor_to_desired_transform(1, 1) = 1.0;
+        // sensor_to_desired_transform(2, 2) = -1.0;
+
 
         for (int i = 0; i < pixels_per_column_; ++i) {
             double az_deg = azimuth_angles_json[i].get<double>();
@@ -202,7 +203,7 @@ namespace dynamicMap {
                 0.0,
                 1.0);
 
-            Eigen::Vector4d offset_transformed = sensor_to_desired_transform * lidar_to_sensor_transform_ * offset_lidar_frame;
+            Eigen::Vector4d offset_transformed = sensor_to_desired_transform * offset_lidar_frame;
             x_2_[m_id] = offset_transformed.x();
             y_2_[m_id] = offset_transformed.y();
             z_2_[m_id] = offset_transformed.z();
@@ -223,7 +224,7 @@ namespace dynamicMap {
                     sin_alt,
                     0.0);
 
-                Eigen::Vector4d dir_transformed = sensor_to_desired_transform * lidar_to_sensor_transform_ * dir_lidar_frame;
+                Eigen::Vector4d dir_transformed = sensor_to_desired_transform * dir_lidar_frame;
                 x_1_[m_id][ch] = dir_transformed.x();
                 y_1_[m_id][ch] = dir_transformed.y();
                 z_1_[m_id][ch] = dir_transformed.z();

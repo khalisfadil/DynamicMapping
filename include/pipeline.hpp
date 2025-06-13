@@ -14,10 +14,12 @@
 #include <OusterLidarCallback_c.hpp>
 #include <LidarDataframe.hpp>
 #include <navdataframe.hpp>
+#include <vizudataframe.hpp>
 #include <LidarIMUDataFrame.hpp>
 #include <DataFrame_NavMsg.hpp>
 #include <callback_navMsg.hpp>
 #include <map.hpp>
+#include <vizuutils.hpp>
 
 
 namespace dynamicMap {
@@ -30,6 +32,7 @@ namespace dynamicMap {
             static boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> decodedLidarIMU_buffer_;
             static boost::lockfree::spsc_queue<std::vector<decodeNav::DataFrameNavMsg>, boost::lockfree::capacity<128>> decodedNav_buffer_;
             static boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128>> interpolatedNav_buffer_;
+            static boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128>> vizu_buffer_;
 
             Pipeline(const std::string& json_path); // Constructor with JSON file path
             Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
@@ -53,8 +56,6 @@ namespace dynamicMap {
             std::mutex consoleMutex;
             OusterLidarCallback lidarCallback;
             uint16_t frame_id_= 0;
-            uint64_t Accelerometer_Read_Time_ = 0.0;
-            uint64_t Gyroscope_Read_Time_ = 0.0;
 
             lidarDecode::LidarDataFrame frame_data_copy_;
 
@@ -70,12 +71,17 @@ namespace dynamicMap {
 
             Map map_;
 
+            VizuDataFrame vizuFrame_;
+            Eigen::Vector3d currentLookat_ = {0, 0, 0};
+            std::chrono::milliseconds targetFrameDuration{30};
+
             std::shared_ptr<open3d::geometry::PointCloud> point_cloud_ptr_;
+            std::shared_ptr<open3d::geometry::TriangleMesh> vehiclemesh_ptr_;
 
             bool updateVisualizer(open3d::visualization::Visualizer* vis);
-            void updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const lidarDecode::LidarDataFrame& frame);
-            
-            std::chrono::milliseconds targetFrameDuration{100}; //30 FPS
+            void updateStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr,
+                    std::shared_ptr<open3d::geometry::TriangleMesh>& vehiclemesh_ptr,
+                    const dynamicMap::VizuDataFrame& frame);
 
     };
 } // namespace dynamicMap

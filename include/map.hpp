@@ -93,7 +93,7 @@ namespace dynamicMap {
 
             // -----------------------------------------------------------------------------
 
-            void add(const std::vector<Points3D>& points, double voxel_size, int max_num_points_in_voxel,
+            void add(const std::vector<lidarDecode::Points3D>& points, double voxel_size, int max_num_points_in_voxel,
                     double min_distance_points, int min_num_points = 0) {
                 for (const auto& point : points) {
                     add(point.pt, voxel_size, max_num_points_in_voxel, min_distance_points, min_num_points);
@@ -243,6 +243,14 @@ namespace dynamicMap {
                 }
 
                 return closest_neighbors;
+            }
+
+            // -----------------------------------------------------------------------------
+
+            void raycast(const Eigen::Vector3d& local_pose, const std::vector<lidarDecode::Points3D>& points, double voxel_size) {
+                for (const auto& point : points) {
+                    raycast(local_pose, point.pt, voxel_size);
+                }
             }
 
             // -----------------------------------------------------------------------------
