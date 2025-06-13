@@ -1,4 +1,6 @@
-#include <Eigen/Dense>
+#pragma once
+
+#include <cstdint>
 
 namespace dynamicMap {
 
@@ -13,18 +15,6 @@ namespace dynamicMap {
         uint16_t reflectivity = 0;     // Reflectivity value
         uint16_t signal = 0;           // Signal strength
         uint16_t nir = 0;              // Near-infrared value
-
-        // Conversion function to Points3D
-        Points3D toPoints3D() const {
-            Points3D result;
-            result.raw_pt = Eigen::Vector3d(x, y, z);  // Set raw point from x, y, z
-            result.pt = Eigen::Vector3d(x, y, z);      // Assume corrected point is same as raw for now
-            result.att = Eigen::Vector3i(reflectivity, signal, nir); // Map attributes to att
-            result.relative_timestamp = relative_timestamp; // Copy relative timestamp
-            result.timestamp = timestamp;                  // Copy absolute timestamp
-            result.m_id = m_id;                            // Copy measurement ID
-            return result;
-        }
     };
 
     struct Points3D {

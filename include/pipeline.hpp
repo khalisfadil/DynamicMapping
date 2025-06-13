@@ -17,6 +17,7 @@
 #include <LidarIMUDataFrame.hpp>
 #include <DataFrame_NavMsg.hpp>
 #include <callback_navMsg.hpp>
+#include <map.hpp>
 
 
 namespace dynamicMap {
@@ -66,8 +67,8 @@ namespace dynamicMap {
             double oriLat_ = 0.0;
             double oriLon_ = 0.0;
             double oriAlt_ = 0.0;
-            
 
+            Map map_;
 
             std::shared_ptr<open3d::geometry::PointCloud> point_cloud_ptr_;
 

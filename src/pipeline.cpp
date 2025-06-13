@@ -10,7 +10,6 @@ namespace dynamicMap {
     // -----------------------------------------------------------------------------
 
     Pipeline::Pipeline(const std::string& json_path) : lidarCallback(json_path) {}
-    Pipeline::Pipeline(const nlohmann::json& json_data) : lidarCallback(json_data) {}
     // Pipeline::~Pipeline() {}
 
     // -----------------------------------------------------------------------------
@@ -517,14 +516,51 @@ namespace dynamicMap {
     void Pipeline::updateOccMap(const std::vector<int>& allowedCores) {
         setThreadAffinity(allowedCores);
 
+        // Map parameters (adjust as needed)
+        constexpr double voxel_size = 0.1; // Voxel size in meters
+        constexpr int max_num_points_in_voxel = 10; // Max points per voxel
+        constexpr double min_distance_points = 0.01; // Min distance between points in a voxel
+        constexpr int min_num_points = 1; // Min points required in a voxel before adding more
+
         try {
-
             while (running_.load(std::memory_order_acquire)) {
+                if (interpolatedNav_buffer_.empty()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
 
+                NavDataFrame temp_NavData;
+                if (!interpolatedNav_buffer_.pop(temp_NavData)) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] updateOccMap: Failed to pop from interpolatedNav_buffer_." << std::endl;
+                    continue;
+                }
+
+                // Get point cloud as std::vector<lidarDecode::Point3D>
+                std::vector<lidarDecode::Point3D> point_cloud = temp_NavData.lidar_data.toPoint3D();
+
+                if (point_cloud.empty()) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] updateOccMap: Empty point cloud for frame ID "
+                            << temp_NavData.lidar_data.frame_id << "." << std::endl;
+                    continue;
+                }
+
+                // Add points to the map
+                map_.add(point_cloud, voxel_size, max_num_points_in_voxel, min_distance_points, min_num_points);
+
+                // Update voxel lifetimes
+                map_.update_and_filter_lifetimes();
+
+                // Log success
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cout << "[Pipeline] updateOccMap: Added " << points.size()
+                        << " points to map for frame ID " << temp_NavData.lidar_data.frame_id
+                        << ". Total map size: " << map_.size() << " points." << std::endl;
             }
-
         } catch (const std::exception& e) {
-
+            std::lock_guard<std::mutex> lock(consoleMutex);
+            std::cerr << "[Pipeline] updateOccMap: Exception occurred: " << e.what() << std::endl;
         }
     }
 } // namespace dynamicMap

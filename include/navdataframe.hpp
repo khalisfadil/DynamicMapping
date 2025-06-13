@@ -7,14 +7,16 @@
 namespace dynamicMap {
 
     struct NavDataFrame {
-        lidarDecode::LidarDataFrame lidar_data; // LiDAR data frame
-        decodeNav::DataFrameNavMsg nav_data;    // Navigation data message
-        double oriLat = 0.0;                    // Origin latitude (radians)
-        double oriLon = 0.0;                    // Origin longitude (radians)
-        double oriAlt = 0.0;                    // Origin altitude (meters)
-        double N = 0.0;                         // North coordinate (meters)
-        double E = 0.0;                         // East coordinate (meters)
-        double D = 0.0;                         // Down coordinate (meters)
+        lidarDecode::LidarDataFrame lidar_data;                         // LiDAR data frame
+        decodeNav::DataFrameNavMsg nav_data;                            // Navigation data message
+        double oriLat = 0.0;                                            // Origin latitude (radians)
+        double oriLon = 0.0;                                            // Origin longitude (radians)
+        double oriAlt = 0.0;                                            // Origin altitude (meters)
+        double N = 0.0;                                                 // North coordinate (meters)
+        double E = 0.0;                                                 // East coordinate (meters)
+        double D = 0.0;                                                 // Down coordinate (meters)
+        Eigen::Matrix4d T = Eigen::Matrix4d::Identity();                // Transformation matrix
+
 
         // Default constructor
         NavDataFrame() = default;
@@ -35,7 +37,12 @@ namespace dynamicMap {
 
             Eigen::Vector4d q = nav_math.getQuat(nav_data.roll, nav_data.pitch, nav_data.yaw);
 
+            Eigen::VectorXd u;
+            u << N,E,D,q(0),q(1),q(2),q(3);
 
+            T = nav_math.TransformMatrix(u);
+            
+            transformLidarData();
         }
 
 
@@ -49,6 +56,7 @@ namespace dynamicMap {
             N = 0.0;
             E = 0.0;
             D = 0.0;
+            T = Eigen::Matrix4d::Identity();
         }
 
         // Reserve space for LiDAR data
@@ -66,9 +74,46 @@ namespace dynamicMap {
                             std::isfinite(nav_data.altitude);
             // Check origin and NED coordinates
             bool coords_valid = std::isfinite(oriLat) && std::isfinite(oriLon) && 
-                               std::isfinite(oriAlt) && 
-                               std::isfinite(N) && std::isfinite(E) && std::isfinite(D);
+                            std::isfinite(oriAlt) && 
+                            std::isfinite(N) && std::isfinite(E) && std::isfinite(D);
             return lidar_valid && nav_valid && coords_valid;
+        }
+
+        // Transform LiDAR data points using the transformation matrix T
+        void transformLidarData() {
+            // Skip if no points to transform or invalid transformation matrix
+            if (lidar_data.numberpoints == 0 || T.rows() != 4 || T.cols() != 4) {
+                return;
+            }
+
+            // Create Nx3 matrix from x, y, z coordinates
+            Eigen::MatrixXd points(lidar_data.numberpoints, 3);
+            for (size_t i = 0; i < lidar_data.numberpoints; ++i) {
+                points(i, 0) = lidar_data.x[i];
+                points(i, 1) = lidar_data.y[i];
+                points(i, 2) = lidar_data.z[i];
+            }
+
+            // Extract rotation matrix (3x3) and translation vector components
+            Eigen::Matrix3d R = T.block<3,3>(0,0);
+            double tx = T(0,3);
+            double ty = T(1,3);
+            double tz = T(2,3);
+
+            // Apply transformation: Pout = Point * R.transpose()
+            Eigen::MatrixXd Pout = points * R.transpose();
+
+            // Apply translation: Pout(:,i) += T(i,3) for i = 0,1,2
+            Pout.col(0).array() += tx;
+            Pout.col(1).array() += ty;
+            Pout.col(2).array() += tz;
+
+            // Copy transformed coordinates back to lidar_data
+            for (size_t i = 0; i < lidar_data.numberpoints; ++i) {
+                lidar_data.x[i] = Pout(i, 0);
+                lidar_data.y[i] = Pout(i, 1);
+                lidar_data.z[i] = Pout(i, 2);
+            }
         }
     };
 
