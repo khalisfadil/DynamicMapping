@@ -13,7 +13,11 @@
 #include <UdpSocket.hpp>
 #include <OusterLidarCallback_c.hpp>
 #include <LidarDataframe.hpp>
+#include <navdataframe.hpp>
 #include <LidarIMUDataFrame.hpp>
+#include <DataFrame_NavMsg.hpp>
+#include <callback_navMsg.hpp>
+
 
 namespace dynamicMap {
     class Pipeline {
@@ -23,6 +27,8 @@ namespace dynamicMap {
             static std::condition_variable globalCV_;
             static boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> decodedPoint_buffer_;
             static boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> decodedLidarIMU_buffer_;
+            static boost::lockfree::spsc_queue<std::vector<decodeNav::DataFrameNavMsg>, boost::lockfree::capacity<128>> decodedNav_buffer_;
+            static boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128>> interpolatedNav_buffer_;
 
             Pipeline(const std::string& json_path); // Constructor with JSON file path
             Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
@@ -35,6 +41,7 @@ namespace dynamicMap {
             void runVisualizer(const std::vector<int>& allowedCores);
 
             //application
+            void runNavMsgListener(boost::asio::io_context& ioContext, const std::string& host, uint16_t port, uint32_t bufferSize, const std::vector<int>& allowedCores);
             void runDataAlignment(const std::vector<int>& allowedCores);
             void updateOccMap(const std::vector<int>& allowedCores);
 
@@ -49,6 +56,18 @@ namespace dynamicMap {
             uint64_t Gyroscope_Read_Time_ = 0.0;
 
             lidarDecode::LidarDataFrame frame_data_copy_;
+
+            decodeNav::DataFrameNavMsg frame_data_Nav_copy; // Local DataFrame created
+            decodeNav::NavMsgCallback navMsgCallback;
+            double timestampNav_ = 0.0;
+            std::vector<decodeNav::DataFrameNavMsg> frame_buffer_Nav_vec;
+            const size_t VECTOR_SIZE_NAV = 15;
+            bool first_pose = true;
+            double oriLat_ = 0.0;
+            double oriLon_ = 0.0;
+            double oriAlt_ = 0.0;
+            
+
 
             std::shared_ptr<open3d::geometry::PointCloud> point_cloud_ptr_;
 

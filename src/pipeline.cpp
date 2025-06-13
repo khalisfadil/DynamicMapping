@@ -238,9 +238,10 @@ namespace dynamicMap {
         std::cerr << "[Pipeline] Ouster LiDAR listener stopped." << std::endl;
     }
 
+
     // -----------------------------------------------------------------------------
 
-    void Pipeline::runOusterLidarIMUListener(boost::asio::io_context& ioContext,
+    void Pipeline::runNavMsgListener(boost::asio::io_context& ioContext,
                                         const std::string& host,
                                         uint16_t port,
                                         uint32_t bufferSize,
@@ -258,31 +259,28 @@ namespace dynamicMap {
         lidarDecode::UdpSocket listener(ioContext, host, port,
             // Lambda callback:
             [&](const std::vector<uint8_t>& packet_data) {
-                lidarDecode::LidarIMUDataFrame frame_data_IMU_copy; // 1. Local DataFrame created.
-                                        //    It will hold a deep copy of the lidar data.
+                
+                // Decode the packet into frame_data_IMU_copy
+                navMsgCallback.decode_NavMsg(packet_data, frame_data_Nav_copy);
 
-                // 2. lidarCallback processes the packet.
-                //    Inside decode_packet_single_return, frame_data_copy is assigned
-                //    (via DataFrame::operator=) the contents of lidarCallback's completed buffer.
-                //    This results in a deep copy into frame_data_copy.
-                lidarCallback.decode_packet_LidarIMU(packet_data, frame_data_IMU_copy);
+                // Check if the frame is valid
+                if (frame_data_Nav_copy.timestamp > 0 && 
+                    frame_data_Nav_copy.timestamp != this->timestampNav_ ) {
 
-                // 3. Now frame_data_copy is an independent, deep copy of the relevant frame.
-                //    We can safely use it and then move it into the queue.
-                if (frame_data_IMU_copy.Accelerometer_Read_Time_s > 0 && frame_data_IMU_copy.Gyroscope_Read_Time_s > 0 && frame_data_IMU_copy.Accelerometer_Read_Time_s != this->Accelerometer_Read_Time_ && frame_data_IMU_copy.Gyroscope_Read_Time_s != this->Gyroscope_Read_Time_) {
+                    this->timestampNav_ = frame_data_Nav_copy.timestamp;
 
-                    this->Accelerometer_Read_Time_ = frame_data_IMU_copy.Accelerometer_Read_Time_s;
-                    this->Gyroscope_Read_Time_ = frame_data_IMU_copy.Gyroscope_Read_Time_s;
+                    // If the vector is full, remove the oldest frame
+                    if (frame_buffer_Nav_vec.size() >= VECTOR_SIZE_NAV) {
+                        frame_buffer_Nav_vec.erase(frame_buffer_Nav_vec.begin()); // Remove the oldest element
+                    }
+
+                    // Push the new frame into the vector
+                    frame_buffer_Nav_vec.push_back(frame_data_Nav_copy); // Deep copy into vector
                     
-                    // 4. Move frame_data_copy into the SPSC queue.
-                    //    This transfers ownership of frame_data_copy's internal resources (vector data)
-                    //    to the element constructed in the queue, avoiding another full copy.
-                    //    frame_data_copy is left in a valid but unspecified (likely empty) state.
-                    if (!decodedLidarIMU_buffer_.push(std::move(frame_data_IMU_copy))) {
+                    // Push the copy into the SPSC queue
+                    if (!decodedNav_buffer_.push(frame_buffer_Nav_vec)) {
                         std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame " 
-                                << this->frame_id_ // Use this->frame_id_ as frame_data_copy might be moved-from
-                                << ". Buffer Lidar(IMU) might be full." << std::endl;
+                        std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Nav might be full." << std::endl;
                     }
                 }
                 // frame_data_copy goes out of scope here. If it was moved, its destruction is trivial.
@@ -333,11 +331,11 @@ namespace dynamicMap {
         std::lock_guard<std::mutex> lock(consoleMutex);
         std::cerr << "[Pipeline] Ouster LiDAR(IMU) listener stopped." << std::endl;
     }
-
+    
     // -----------------------------------------------------------------------------
 
-    void Pipeline::runDataAlignment(const std::vector<int>& allowedCores) {
-        
+    void Pipeline::runDataAlignment(const std::vector<int>& allowedCores){
+
         setThreadAffinity(allowedCores);
 
         while (running_.load(std::memory_order_acquire)) {
@@ -363,276 +361,155 @@ namespace dynamicMap {
                 }
 
                 // Get min and max lidar timestamps (sorted, so use front and back)
-                double min_lidar_time = temp_LidarData.timestamp_points.front();
-                double max_lidar_time = temp_LidarData.timestamp_points.back();
-
-                // Validate lidar timestamp range
-                if (min_lidar_time > max_lidar_time) {
-                    std::lock_guard<std::mutex> lock(consoleMutex);
-                    std::cerr << "[Pipeline] DataAlignment: Invalid lidar timestamp range: min "
-                            << min_lidar_time << " > max " << max_lidar_time 
-                            << " for frame ID " << temp_LidarData.frame_id << "." << std::endl;
-                    continue;
-                }
+                double lidar_time = temp_LidarData.timestamp_points.front();
+                // double max_lidar_time = temp_LidarData.timestamp_points.back();
 
                 // Loop to find an IMU vector that aligns with the current lidar frame
                 bool aligned = false;
                 while (!aligned){
-                    std::vector<lidarDecode::LidarIMUDataFrame> temp_LidarIMUDataVec;
-                    if (!decodedLidarIMU_buffer_.pop(temp_LidarIMUDataVec)) {
+                    std::vector<decodeNav::DataFrameNavMsg> temp_NavVec;
+                    if (!decodedNav_buffer_.pop(temp_NavVec)) {
                         std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedLidarIMU_buffer_." << std::endl;
+                        std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedNav_buffer_." << std::endl;
                         break;
                     }
 
                     // Skip if IMU data is empty
-                    if (temp_LidarIMUDataVec.empty()) {
+                    if (temp_NavVec.empty()) {
                         std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Empty IMU data vector for lidar frame ID " 
+                        std::cerr << "[Pipeline] DataAlignment: Empty NAV data vector for lidar frame ID " 
                                 << temp_LidarData.frame_id << "." << std::endl;
                         continue;
                     }
 
                     // find min/max
-                    double min_imu_time = temp_LidarIMUDataVec.front().Normalized_Timestamp_s;
-                    double max_imu_time = temp_LidarIMUDataVec.back().Normalized_Timestamp_s;
+                    double min_nav_time = temp_NavVec.front().timestamp;
+                    double max_nav_time = temp_NavVec.back().timestamp;
 
                     // Verify IMU timestamps are valid and ordered
-                    if (min_imu_time > max_imu_time) {
+                    if (min_nav_time > max_nav_time) {
                         std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Invalid IMU timestamp range: min "
-                                << min_imu_time << " > max " << max_imu_time 
+                        std::cerr << "[Pipeline] DataAlignment: Invalid NAV timestamp range: min "
+                                << min_nav_time << " > max " << max_nav_time 
                                 << " for lidar frame ID " << temp_LidarData.frame_id << "." << std::endl;
                         continue;
                     }
 
                     // Check if lidar timestamps are within IMU range
-                    if (min_lidar_time >= min_imu_time && max_lidar_time <= max_imu_time) {
+                    if (lidar_time >= min_nav_time && lidar_time <= max_nav_time) {
                         // Timestamps are aligned; process the data
                         aligned = true;
                         std::lock_guard<std::mutex> lock(consoleMutex);
                         std::cout << "[Pipeline] DataAlignment: Timestamps aligned for frame ID " 
                                 << temp_LidarData.frame_id << ". Lidar range: [" 
-                                << min_lidar_time << ", " << max_lidar_time << "], IMU range: ["
-                                << min_imu_time << ", " << max_imu_time << "]" << std::endl;
+                                << lidar_time << "], NAV range: ["
+                                << min_nav_time << ", " << min_nav_time << "]" << std::endl;
                         // Add processing logic here (e.g., store aligned data, interpolate IMU, pass to lioOdometry)
                         // todo>>
-                    
-                    } else if (min_lidar_time > min_imu_time && max_lidar_time > max_imu_time){
+                        
+                        decodeNav::DataFrameNavMsg interpolatedNavMsg;
+                        int idx1 = -1, idx2 = -1; // idx1 for closest, idx2 for second closest
+                        double min_diff1 = std::numeric_limits<double>::max();
+                        double min_diff2 = std::numeric_limits<double>::max();
+
+                        for (int i = 0; i < temp_NavVec.size(); i++) {
+                            double current_diff = std::abs(temp_NavVec[i].timestamp - lidar_time);
+                            if (current_diff < min_diff1) {
+                                min_diff2 = min_diff1;
+                                idx2 = idx1;
+                                min_diff1 = current_diff;
+                                idx1 = i;
+                            } else if (current_diff < min_diff2) {
+                                min_diff2 = current_diff;
+                                idx2 = i;
+                            }
+                        }
+
+                        // Get the two closest navigation messages
+                        const auto& msg1 = temp_NavVec[idx1];
+                        const auto& msg2 = temp_NavVec[idx2];
+
+                        // Order messages by timestamp (t1 <= t2)
+                        const auto& earlier_msg = (msg1.timestamp <= msg2.timestamp) ? msg1 : msg2;
+                        const auto& later_msg = (msg1.timestamp <= msg2.timestamp) ? msg2 : msg1;
+                        double t1 = earlier_msg.timestamp;
+                        double t2 = later_msg.timestamp;
+
+                        // Verify that lidar_time is within the interpolation range
+                        if (lidar_time < t1 || lidar_time > t2) {
+                            std::lock_guard<std::mutex> lock(consoleMutex);
+                            std::cerr << "[Pipeline] DataAlignment: Lidar time " << lidar_time
+                                    << " outside NAV range [" << t1 << ", " << t2 << "] for frame ID "
+                                    << temp_LidarData.frame_id << "." << std::endl;
+                            continue;
+                        }
+
+                        // Handle case where timestamps are equal
+                        if (t1 == t2) {
+                            interpolatedNavMsg = earlier_msg; // Use either message
+                            interpolatedNavMsg.timestamp = lidar_time; // Set to desired timestamp
+                        } else {
+                            // Compute interpolation factor
+                            double alpha = (lidar_time - t1) / (t2 - t1);
+
+                            // Linear interpolation for each field
+                            interpolatedNavMsg.timestamp = lidar_time; // Set directly to lidar_time
+                            interpolatedNavMsg.latitude = earlier_msg.latitude + alpha * (later_msg.latitude - earlier_msg.latitude);
+                            interpolatedNavMsg.longitude = earlier_msg.longitude + alpha * (later_msg.longitude - earlier_msg.longitude);
+                            interpolatedNavMsg.altitude = earlier_msg.altitude + alpha * (later_msg.altitude - earlier_msg.altitude);
+                            interpolatedNavMsg.roll = earlier_msg.roll + alpha * (later_msg.roll - earlier_msg.roll);
+                            interpolatedNavMsg.pitch = earlier_msg.pitch + alpha * (later_msg.pitch - earlier_msg.pitch);
+                            interpolatedNavMsg.yaw = earlier_msg.yaw + alpha * (later_msg.yaw - earlier_msg.yaw);
+                            interpolatedNavMsg.velU = earlier_msg.velU + alpha * (later_msg.velU - earlier_msg.velU);
+                            interpolatedNavMsg.velV = earlier_msg.velV + alpha * (later_msg.velV - earlier_msg.velV);
+                            interpolatedNavMsg.velW = earlier_msg.velW + alpha * (later_msg.velW - earlier_msg.velW);
+                            interpolatedNavMsg.velP = earlier_msg.velP + alpha * (later_msg.velP - earlier_msg.velP);
+                            interpolatedNavMsg.velQ = earlier_msg.velQ + alpha * (later_msg.velQ - earlier_msg.velQ);
+                            interpolatedNavMsg.velR = earlier_msg.velR + alpha * (later_msg.velR - earlier_msg.velR);
+                            interpolatedNavMsg.accU = earlier_msg.accU + alpha * (later_msg.accU - earlier_msg.accU);
+                            interpolatedNavMsg.accV = earlier_msg.accV + alpha * (later_msg.accV - earlier_msg.accV);
+                            interpolatedNavMsg.accW = earlier_msg.accW + alpha * (later_msg.accW - earlier_msg.accW);
+                            interpolatedNavMsg.accP = earlier_msg.accP + alpha * (later_msg.accP - earlier_msg.accP);
+                            interpolatedNavMsg.accQ = earlier_msg.accQ + alpha * (later_msg.accQ - earlier_msg.accQ);
+                            interpolatedNavMsg.accR = earlier_msg.accR + alpha * (later_msg.accR - earlier_msg.accR);
+                            interpolatedNavMsg.velN = earlier_msg.velN + alpha * (later_msg.velN - earlier_msg.velN);
+                            interpolatedNavMsg.velE = earlier_msg.velE + alpha * (later_msg.velE - earlier_msg.velE);
+                            interpolatedNavMsg.velD = earlier_msg.velD + alpha * (later_msg.velD - earlier_msg.velD);
+                        }
+                        if(first_pose && std::isfinite(interpolatedNavMsg.latitude) && std::isfinite(interpolatedNavMsg.longitude) && std::isfinite(interpolatedNavMsg.altitude) 
+                        && interpolatedNavMsg.latitude > 0.0, interpolatedNavMsg.longitude > 0.0, interpolatedNavMsg.altitude > 0.0){
+                            first_pose = false;
+                            oriLat_ = interpolatedNavMsg.latitude;
+                            oriLon_ = interpolatedNavMsg.longitude;
+                            oriAlt_ = static_cast<double>(interpolatedNavMsg.altitude);
+                        } else {continue;}
+
+                        NavDataFrame interpolatedData(temp_LidarData, interpolatedNavMsg,oriLat_,oriLon_,oriAlt_);
+
+                        // Push the copy into the SPSC queue
+                        if (!interpolatedNav_buffer_.push(interpolatedData)) {
+                            std::lock_guard<std::mutex> lock(consoleMutex);
+                            std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Nav might be full." << std::endl;
+                        }
+
+                    } else if (lidar_time > max_nav_time){
                         // Lidar is too new or partially overlaps; pop another newer IMU vector >> skip while
                         continue;
                     } else {
                         // Lidar impossible to catch up with the IMU timestamp, need to discard this Lidar frame.
                         // Potential Solution, increase the size buffer frame.
                         std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Lidar cannot catch up with IMU data, please increase Buffer size" << std::endl;
+                        std::cerr << "[Pipeline] DataAlignment: Lidar cannot catch up with Nav data, please increase Buffer size" << std::endl;
                         break;
                     }
                 }
             } catch (const std::exception& e) {
                 std::lock_guard<std::mutex> lock(consoleMutex);
                 std::cerr << "[Pipeline] DataAlignment: Exception occurred: " << e.what() << std::endl;
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
         }
-    }
-    
-    // -----------------------------------------------------------------------------
-
-    void Pipeline::runVisualizer(const std::vector<int>& allowedCores) {
-        setThreadAffinity(allowedCores);
-
-        try {
-            if (!vis.CreateVisualizerWindow("3D Point Cloud Visualization", 2560, 1440, 50, 50, true)) { // Added visible=true
-                { // Scope for lock
-                    std::lock_guard<std::mutex> lock(consoleMutex);
-                    std::cerr << "[Pipeline] Visualizer: Failed to create window." << std::endl;
-                }
-                return;
-            }
-            // Access render option after window creation
-            vis.GetRenderOption().background_color_ = Eigen::Vector3d(0.05, 0.05, 0.05); // Dark grey background
-            vis.GetRenderOption().point_size_ = 1.0; // Slightly larger points
-
-            // Setup camera
-            auto& view_control = vis.GetViewControl();
-            view_control.SetLookat({0.0, 0.0, 0.0});    // Look at origin
-            view_control.SetFront({0.0, 0.0, -1.0}); // Camera slightly tilted down, looking from +Y
-            view_control.SetUp({0.0, 1.0, 0.0});     // Z is up
-            // view_control.Scale(0.1);               // Zoom level (smaller value = more zoomed in)
-
-            // Initialize point_cloud_ptr_ if it hasn't been already
-            if (!point_cloud_ptr_) {
-                point_cloud_ptr_ = std::make_shared<open3d::geometry::PointCloud>();
-                // Optionally add a placeholder point if you want to see something before data arrives,
-                // or leave it empty. updatePtCloudStream will handle empty frames.
-                point_cloud_ptr_->points_.push_back(Eigen::Vector3d(0, 0, 0));
-                point_cloud_ptr_->colors_.push_back(Eigen::Vector3d(1, 0, 0)); 
-            }
-            vis.AddGeometry(point_cloud_ptr_);
-
-            // Add a coordinate frame for reference
-            auto coord_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(5.0); // Size 1.0 meter
-            vis.AddGeometry(coord_frame);
-
-            // Register the animation callback
-            // The lambda captures 'this' to call the member function updateVisualizer.
-            vis.RegisterAnimationCallback([this](open3d::visualization::Visualizer* callback_vis_ptr) {
-                // 'this->' is optional for member function calls but can improve clarity
-                return this->updateVisualizer(callback_vis_ptr);
-            });
-            
-            { // Scope for lock
-                std::lock_guard<std::mutex> lock(consoleMutex);
-                std::cerr << "[Pipeline] Visualizer: Starting Open3D event loop." << std::endl;
-            }
-
-            vis.Run(); // This blocks until the window is closed or animation callback returns false
-
-            // Clean up
-            vis.DestroyVisualizerWindow();
-            { // Scope for lock
-                std::lock_guard<std::mutex> lock(consoleMutex);
-                std::cerr << "[Pipeline] Visualizer: Open3D event loop finished." << std::endl;
-            }
-
-        } catch (const std::exception& e) {
-            { // Scope for lock
-                std::lock_guard<std::mutex> lock(consoleMutex);
-                std::cerr << "[Pipeline] Visualizer: Exception caught: " << e.what() << std::endl;
-            }
-            // Ensure window is destroyed even if an exception occurs mid-setup (if vis is valid)
-            if (vis.GetWindowName() != "") { // A simple check if window might have been created
-                vis.DestroyVisualizerWindow();
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------------
-
-    bool Pipeline::updateVisualizer(open3d::visualization::Visualizer* vis_ptr) {
-        // Record start time for frame rate limiting (measures processing time of this function)
-        // If you want to limit to an absolute FPS regardless of processing time,
-        // you'd need a static `last_render_timepoint`.
-        auto call_start_time = std::chrono::steady_clock::now();
-
-        lidarDecode::LidarDataFrame frame_to_display;
-        bool new_frame_available = false;
-        auto& view_control = vis_ptr->GetViewControl();
-
-        // Consume all frames currently in the buffer, but only process the latest one for display.
-        // This helps the visualizer "catch up" if the producer is faster.
-        lidarDecode::LidarDataFrame temp_frame;
-        while (decodedPoint_buffer_.pop(temp_frame)) {
-            frame_to_display = std::move(temp_frame); // Keep moving the latest popped frame
-            new_frame_available = true;
-        }
-
-        bool geometry_needs_update = false;
-        if (new_frame_available) {
-            // Process the latest available frame
-            // The condition `frame_to_display.numberpoints > 0` is implicitly handled
-            // by updatePtCloudStream, which will clear the cloud if numberpoints is 0.
-            // std::cerr << "numpoint in decoded: " << frame_to_display.numberpoints << std::endl; //both show same value
-            updatePtCloudStream(point_cloud_ptr_, frame_to_display);
-            geometry_needs_update = true; // Assume geometry changed if we processed a new frame
-        }
-
-        if (geometry_needs_update) {
-            vis_ptr->UpdateGeometry(point_cloud_ptr_); // Tell Open3D to refresh this geometry
-            view_control.Scale(0.1);
-            // std::cerr << "numpoint in visualizer: " << point_cloud_ptr_->points_.size() << std::endl; // both show same value
-        }
-
-        // Frame rate limiter: ensure this function call (including processing and sleep)
-        // takes at least targetFrameDuration.
-        auto processing_done_time = std::chrono::steady_clock::now();
-        auto processing_duration = std::chrono::duration_cast<std::chrono::milliseconds>(processing_done_time - call_start_time);
-
-        if (processing_duration < targetFrameDuration) {
-            std::this_thread::sleep_for(targetFrameDuration - processing_duration);
-        }
-                
-        // Return true to continue animation if the application is still running.
-        return running_.load(std::memory_order_acquire);
-    }
-
-    // -----------------------------------------------------------------------------
-
-    void Pipeline::updatePtCloudStream(std::shared_ptr<open3d::geometry::PointCloud>& ptCloud_ptr, const lidarDecode::LidarDataFrame& frame) {
-        if (!ptCloud_ptr) return; // Should not happen if initialized, but good check
-
-        if (frame.numberpoints <= 0) {
-            // If the new frame is empty, clear the displayed point cloud
-            // to avoid showing stale data.
-            if (!ptCloud_ptr->IsEmpty()) { // Only clear if it's not already empty
-                ptCloud_ptr->Clear();
-            }
-            return;
-        }
-
-        // Resize point cloud vectors to match the new frame's data.
-        // This is efficient as it reuses memory if capacity is sufficient.
-        ptCloud_ptr->points_.resize(frame.numberpoints);
-        ptCloud_ptr->colors_.resize(frame.numberpoints);
-
-        // Pre-calculate for color mapping (already a constexpr, which is good)
-        constexpr double log2_255_div_100 = 1.35049869499; // log2(255.0/100.0)
-
-        for (size_t i = 0; i < frame.numberpoints; ++i) {
-            // Assign transformed coordinates for visualization
-            // OusterLidarCallback output: x=front, y=right, z=down
-            // Visualization coordinates: x=front, y=-right (left), z=-down (up)
-            ptCloud_ptr->points_[i] = Eigen::Vector3d(frame.x[i], -frame.y[i], -frame.z[i]);
-
-            // Map reflectivity to parameter t for color interpolation
-            double reflectivity_val = static_cast<double>(frame.reflectivity[i]); // Ensure double for calculations
-            double t; // Normalized parameter [0, 1] for color interpolation
-
-            if (reflectivity_val <= 100.0) {
-                // Linear mapping for lambertian targets (reflectivity 0 to 100) -> t [0, 0.5]
-                t = reflectivity_val / 200.0; 
-            } else {
-                // Logarithmic-based mapping for retroreflective targets (reflectivity 101 to 255) -> t (0.5, 1.0]
-                // Ensure reflectivity_val / 100.0 is > 0 for log2, which it will be if reflectivity_val > 100
-                double log_val = std::log2(reflectivity_val / 100.0);
-                double s_param = 1.0 + 863.0 * (log_val / log2_255_div_100);
-                t = 0.5 + 0.5 * (s_param - 1.0) / 863.0;
-            }
-            t = std::max(0.0, std::min(1.0, t)); // Clamp t to [0, 1] to be safe
-
-            // Interpolate color based on t
-            if (t < 0.5) { // Royal blue (t=0) to Neon green (t=0.5)
-                double u = t * 2.0; // u normalized from 0 to 1 for this segment
-                ptCloud_ptr->colors_[i] = Eigen::Vector3d(
-                    0.12 * (1.0 - u),             // R: 0.12 -> 0.0
-                    0.29 + (1.0 - 0.29) * u,      // G: 0.29 -> 1.0
-                    0.69 * (1.0 - u)              // B: 0.69 -> 0.0
-                );
-            } else { // Neon green (t=0.5) to White (t=1.0)
-                double u = (t - 0.5) * 2.0; // u normalized from 0 to 1 for this segment
-                ptCloud_ptr->colors_[i] = Eigen::Vector3d(
-                    u,                            // R: 0.0 -> 1.0
-                    1.0,                          // G: 1.0 (constant)
-                    u                             // B: 0.0 -> 1.0
-                );
-            }
-        }
-        
-
-        // VoxelDownSample:
-        // The original call ptCloud_ptr->VoxelDownSample(1); was problematic:
-        // 1. It returns a new point cloud, does not modify in place.
-        // 2. A voxel size of 1.0 (meter) is very large and would decimate the cloud heavily.
-        // If downsampling is truly needed for performance or visual clarity, apply it here correctly.
-        // Example:
-        // double desired_voxel_size = 0.05; // 5cm, adjust as needed
-        // auto downsampled_cloud = ptCloud_ptr->VoxelDownSample(desired_voxel_size);
-        // *ptCloud_ptr = *downsampled_cloud; // This replaces the current cloud with the downsampled one.
-                                            // This involves a copy.
-        // For now, it's removed as its original intent/usage was unclear and potentially incorrect.
-        // If performance is an issue with many points, consider uncommenting and adjusting the above.
     }
 
     // -----------------------------------------------------------------------------
