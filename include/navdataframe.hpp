@@ -35,7 +35,7 @@ namespace dynamicMap {
 
             Eigen::Vector4d q = nav_math.getQuat(nav_data.roll, nav_data.pitch, nav_data.yaw);
 
-            
+
         }
 
 
