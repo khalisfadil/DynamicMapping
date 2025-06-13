@@ -34,6 +34,10 @@ namespace dynamicMap {
             void runOusterLidarIMUListener(boost::asio::io_context& ioContext, const std::string& host, uint16_t port, uint32_t bufferSize, const std::vector<int>& allowedCores); 
             void runVisualizer(const std::vector<int>& allowedCores);
 
+            //application
+            void runDataAlignment(const std::vector<int>& allowedCores);
+            void updateOccMap(const std::vector<int>& allowedCores);
+
             open3d::visualization::Visualizer vis;
 
         private:

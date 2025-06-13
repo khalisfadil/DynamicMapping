@@ -336,6 +336,110 @@ namespace dynamicMap {
 
     // -----------------------------------------------------------------------------
 
+    void Pipeline::runDataAlignment(const std::vector<int>& allowedCores) {
+        
+        setThreadAffinity(allowedCores);
+
+        while (running_.load(std::memory_order_acquire)) {
+            try {
+                // If no lidar data is available, wait briefly and retry
+                if (decodedPoint_buffer_.empty()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+
+                lidarDecode::LidarDataFrame temp_LidarData;
+                if (!decodedPoint_buffer_.pop(temp_LidarData)) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedPoint_buffer_." << std::endl;
+                    continue;
+                }
+
+                // Skip if lidar data is empty
+                if (temp_LidarData.timestamp_points.empty()) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] DataAlignment: Empty lidar points for frame ID " << temp_LidarData.frame_id << "." << std::endl;
+                    continue;
+                }
+
+                // Get min and max lidar timestamps (sorted, so use front and back)
+                double min_lidar_time = temp_LidarData.timestamp_points.front();
+                double max_lidar_time = temp_LidarData.timestamp_points.back();
+
+                // Validate lidar timestamp range
+                if (min_lidar_time > max_lidar_time) {
+                    std::lock_guard<std::mutex> lock(consoleMutex);
+                    std::cerr << "[Pipeline] DataAlignment: Invalid lidar timestamp range: min "
+                            << min_lidar_time << " > max " << max_lidar_time 
+                            << " for frame ID " << temp_LidarData.frame_id << "." << std::endl;
+                    continue;
+                }
+
+                // Loop to find an IMU vector that aligns with the current lidar frame
+                bool aligned = false;
+                while (!aligned){
+                    std::vector<lidarDecode::LidarIMUDataFrame> temp_LidarIMUDataVec;
+                    if (!decodedLidarIMU_buffer_.pop(temp_LidarIMUDataVec)) {
+                        std::lock_guard<std::mutex> lock(consoleMutex);
+                        std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedLidarIMU_buffer_." << std::endl;
+                        break;
+                    }
+
+                    // Skip if IMU data is empty
+                    if (temp_LidarIMUDataVec.empty()) {
+                        std::lock_guard<std::mutex> lock(consoleMutex);
+                        std::cerr << "[Pipeline] DataAlignment: Empty IMU data vector for lidar frame ID " 
+                                << temp_LidarData.frame_id << "." << std::endl;
+                        continue;
+                    }
+
+                    // find min/max
+                    double min_imu_time = temp_LidarIMUDataVec.front().Normalized_Timestamp_s;
+                    double max_imu_time = temp_LidarIMUDataVec.back().Normalized_Timestamp_s;
+
+                    // Verify IMU timestamps are valid and ordered
+                    if (min_imu_time > max_imu_time) {
+                        std::lock_guard<std::mutex> lock(consoleMutex);
+                        std::cerr << "[Pipeline] DataAlignment: Invalid IMU timestamp range: min "
+                                << min_imu_time << " > max " << max_imu_time 
+                                << " for lidar frame ID " << temp_LidarData.frame_id << "." << std::endl;
+                        continue;
+                    }
+
+                    // Check if lidar timestamps are within IMU range
+                    if (min_lidar_time >= min_imu_time && max_lidar_time <= max_imu_time) {
+                        // Timestamps are aligned; process the data
+                        aligned = true;
+                        std::lock_guard<std::mutex> lock(consoleMutex);
+                        std::cout << "[Pipeline] DataAlignment: Timestamps aligned for frame ID " 
+                                << temp_LidarData.frame_id << ". Lidar range: [" 
+                                << min_lidar_time << ", " << max_lidar_time << "], IMU range: ["
+                                << min_imu_time << ", " << max_imu_time << "]" << std::endl;
+                        // Add processing logic here (e.g., store aligned data, interpolate IMU, pass to lioOdometry)
+                        // todo>>
+                    
+                    } else if (min_lidar_time > min_imu_time && max_lidar_time > max_imu_time){
+                        // Lidar is too new or partially overlaps; pop another newer IMU vector >> skip while
+                        continue;
+                    } else {
+                        // Lidar impossible to catch up with the IMU timestamp, need to discard this Lidar frame.
+                        // Potential Solution, increase the size buffer frame.
+                        std::lock_guard<std::mutex> lock(consoleMutex);
+                        std::cerr << "[Pipeline] DataAlignment: Lidar cannot catch up with IMU data, please increase Buffer size" << std::endl;
+                        break;
+                    }
+                }
+            } catch (const std::exception& e) {
+                std::lock_guard<std::mutex> lock(consoleMutex);
+                std::cerr << "[Pipeline] DataAlignment: Exception occurred: " << e.what() << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+        }
+    }
+    
+    // -----------------------------------------------------------------------------
+
     void Pipeline::runVisualizer(const std::vector<int>& allowedCores) {
         setThreadAffinity(allowedCores);
 
@@ -529,6 +633,22 @@ namespace dynamicMap {
                                             // This involves a copy.
         // For now, it's removed as its original intent/usage was unclear and potentially incorrect.
         // If performance is an issue with many points, consider uncommenting and adjusting the above.
+    }
+
+    // -----------------------------------------------------------------------------
+
+    void Pipeline::updateOccMap(const std::vector<int>& allowedCores) {
+        setThreadAffinity(allowedCores);
+
+        try {
+
+            while (running_.load(std::memory_order_acquire)) {
+
+            }
+
+        } catch (const std::exception& e) {
+
+        }
     }
 } // namespace dynamicMap
 
