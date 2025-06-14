@@ -168,82 +168,82 @@ namespace dynamicMap {
 
             // -----------------------------------------------------------------------------
 
-            ArrayVector3d searchNeighbors(const Eigen::Vector3d& point, int nb_voxels_visited, double size_voxel_map,
-                                            int max_num_neighbors, int threshold_voxel_capacity = 1, std::vector<Voxel>* voxels = nullptr) {
-                // Reserve space for output
-                if (voxels) voxels->reserve(max_num_neighbors);
+            // ArrayVector3d searchNeighbors(const Eigen::Vector3d& point, int nb_voxels_visited, double size_voxel_map,
+            //                                 int max_num_neighbors, int threshold_voxel_capacity = 1, std::vector<Voxel>* voxels = nullptr) {
+            //     // Reserve space for output
+            //     if (voxels) voxels->reserve(max_num_neighbors);
 
-                // Compute center voxel coordinates
-                const Voxel center = Voxel::Coordinates(point, size_voxel_map);
-                const int16_t kx = center.x;
-                const int16_t ky = center.y;
-                const int16_t kz = center.z;
+            //     // Compute center voxel coordinates
+            //     const Voxel center = Voxel::Coordinates(point, size_voxel_map);
+            //     const int16_t kx = center.x;
+            //     const int16_t ky = center.y;
+            //     const int16_t kz = center.z;
 
-                // Initialize min-heap for closest points
-                priority_queue_t priority_queue;
+            //     // Initialize min-heap for closest points
+            //     priority_queue_t priority_queue;
 
-                // Track max distance for pruning
-                double max_distance = std::numeric_limits<double>::max();
+            //     // Track max distance for pruning
+            //     double max_distance = std::numeric_limits<double>::max();
 
-                // Spiral traversal: process voxels layer by layer
-                // The loop structure inherently keeps voxels within the desired cubic radius.
-                for (int16_t d = 0; d <= nb_voxels_visited; ++d) {
-                    for (int16_t dx = -d; dx <= d; ++dx) {
-                        for (int16_t dy = -d; dy <= d; ++dy) {
-                            for (int16_t dz = -d; dz <= d; ++dz) {
-                                // Only process boundary voxels at distance d
-                                if (std::abs(dx) != d && std::abs(dy) != d && std::abs(dz) != d) continue;
+            //     // Spiral traversal: process voxels layer by layer
+            //     // The loop structure inherently keeps voxels within the desired cubic radius.
+            //     for (int16_t d = 0; d <= nb_voxels_visited; ++d) {
+            //         for (int16_t dx = -d; dx <= d; ++dx) {
+            //             for (int16_t dy = -d; dy <= d; ++dy) {
+            //                 for (int16_t dz = -d; dz <= d; ++dz) {
+            //                     // Only process boundary voxels at distance d
+            //                     if (std::abs(dx) != d && std::abs(dy) != d && std::abs(dz) != d) continue;
 
-                                Voxel voxel{kx + dx, ky + dy, kz + dz};
+            //                     Voxel voxel{kx + dx, ky + dy, kz + dz};
 
-                                // Early pruning: skip voxels too far away
-                                Eigen::Vector3d voxel_center(
-                                    voxel.x * size_voxel_map + size_voxel_map / 2.0,
-                                    voxel.y * size_voxel_map + size_voxel_map / 2.0,
-                                    voxel.z * size_voxel_map + size_voxel_map / 2.0
-                                );
+            //                     // Early pruning: skip voxels too far away
+            //                     Eigen::Vector3d voxel_center(
+            //                         voxel.x * size_voxel_map + size_voxel_map / 2.0,
+            //                         voxel.y * size_voxel_map + size_voxel_map / 2.0,
+            //                         voxel.z * size_voxel_map + size_voxel_map / 2.0
+            //                     );
                                 
-                                if ((voxel_center - point).norm() > max_distance + size_voxel_map) continue;
+            //                     if ((voxel_center - point).norm() > max_distance + size_voxel_map) continue;
 
-                                // Look up voxel in map
-                                auto search = voxel_map_.find(voxel);
-                                if (search == voxel_map_.end()) continue;
+            //                     // Look up voxel in map
+            //                     auto search = voxel_map_.find(voxel);
+            //                     if (search == voxel_map_.end()) continue;
 
-                                const auto& voxel_block = search->second;
-                                if (voxel_block.NumPoints() < threshold_voxel_capacity) continue;
+            //                     const auto& voxel_block = search->second;
+            //                     if (voxel_block.NumPoints() < threshold_voxel_capacity) continue;
 
-                                // Process points in voxel
-                                for (const auto& neighbor : voxel_block.points) {
-                                    double distance = (neighbor - point).norm();
-                                    if (priority_queue.size() < static_cast<size_t>(max_num_neighbors)) {
-                                        priority_queue.emplace(distance, neighbor, voxel);
-                                        if (priority_queue.size() == static_cast<size_t>(max_num_neighbors)) {
-                                            max_distance = std::get<0>(priority_queue.top());
-                                        }
-                                    } else if (distance < max_distance) {
-                                        priority_queue.pop();
-                                        priority_queue.emplace(distance, neighbor, voxel);
-                                        max_distance = std::get<0>(priority_queue.top());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            //                     // Process points in voxel
+            //                     for (const auto& neighbor : voxel_block.points) {
+            //                         double distance = (neighbor - point).norm();
+            //                         if (priority_queue.size() < static_cast<size_t>(max_num_neighbors)) {
+            //                             priority_queue.emplace(distance, neighbor, voxel);
+            //                             if (priority_queue.size() == static_cast<size_t>(max_num_neighbors)) {
+            //                                 max_distance = std::get<0>(priority_queue.top());
+            //                             }
+            //                         } else if (distance < max_distance) {
+            //                             priority_queue.pop();
+            //                             priority_queue.emplace(distance, neighbor, voxel);
+            //                             max_distance = std::get<0>(priority_queue.top());
+            //                         }
+            //                     }
+            //                 }
+            //             }
+            //         }
+            //     }
 
-                // Extract results
-                const auto size = priority_queue.size();
-                ArrayVector3d closest_neighbors(size);
-                if (voxels) voxels->resize(size);
+            //     // Extract results
+            //     const auto size = priority_queue.size();
+            //     ArrayVector3d closest_neighbors(size);
+            //     if (voxels) voxels->resize(size);
 
-                for (size_t i = size; i > 0; --i) {
-                    closest_neighbors[i - 1] = std::get<1>(priority_queue.top());
-                    if (voxels) (*voxels)[i - 1] = std::get<2>(priority_queue.top());
-                    priority_queue.pop();
-                }
+            //     for (size_t i = size; i > 0; --i) {
+            //         closest_neighbors[i - 1] = std::get<1>(priority_queue.top());
+            //         if (voxels) (*voxels)[i - 1] = std::get<2>(priority_queue.top());
+            //         priority_queue.pop();
+            //     }
 
-                return closest_neighbors;
-            }
+            //     return closest_neighbors;
+            // }
 
             // -----------------------------------------------------------------------------
 

@@ -1,8 +1,8 @@
 #include <pipeline.hpp>
 
-namespace dynamicMap {
+using namespace dynamicMap;
 
-    int main() {
+int main() {
         std::string json_path = "/home/khalis/Sync/SensorSOW/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/json/20230802_Warnow_OS2.json";
         uint32_t lidar_packet_size = 24896;
 
@@ -92,6 +92,5 @@ namespace dynamicMap {
         }
         std::cout << "[Main] All processes stopped. Exiting program." << std::endl;
         return EXIT_SUCCESS;
-    }
+}
 
-} // namespace lidarDecode

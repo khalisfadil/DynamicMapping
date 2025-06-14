@@ -19,8 +19,6 @@
 #include <DataFrame_NavMsg.hpp>
 #include <callback_navMsg.hpp>
 #include <map.hpp>
-#include <vizuutils.hpp>
-
 
 namespace dynamicMap {
     class Pipeline {
@@ -35,7 +33,7 @@ namespace dynamicMap {
             static boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128>> vizu_buffer_;
 
             Pipeline(const std::string& json_path); // Constructor with JSON file path
-            Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
+            // Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
             // ~Pipeline();
             static void signalHandler(int signal);
             void setThreadAffinity(const std::vector<int>& coreIDs);
@@ -48,6 +46,7 @@ namespace dynamicMap {
             void runNavMsgListener(boost::asio::io_context& ioContext, const std::string& host, uint16_t port, uint32_t bufferSize, const std::vector<int>& allowedCores);
             void runDataAlignment(const std::vector<int>& allowedCores);
             void updateOccMap(const std::vector<int>& allowedCores);
+            std::shared_ptr<open3d::geometry::TriangleMesh> createVehicleMesh(const Eigen::Matrix4d& T);
 
             open3d::visualization::Visualizer vis;
 
