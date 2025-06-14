@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/dynamicmap.dir/src/main.cpp.o -o dynamicmap  -Wl,-rpath,/usr/local/lib libcore.a /usr/lib/x86_64-linux-gnu/libboost_system.so.1.83.0 /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.83.0 /usr/lib/x86_64-linux-gnu/libboost_atomic.so.1.83.0 /usr/local/lib/libOpen3D.so.0.18.0 /usr/lib/x86_64-linux-gnu/libcpuid.so -lpthread 

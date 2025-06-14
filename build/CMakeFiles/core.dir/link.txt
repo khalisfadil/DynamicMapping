@@ -1,0 +1,2 @@
+/usr/bin/ar qc libcore.a CMakeFiles/core.dir/extern/GNSSKompass/src/callback_navMsg.cpp.o CMakeFiles/core.dir/extern/GNSSKompass/src/navMath.cpp.o CMakeFiles/core.dir/extern/LidarDecode/src/UdpSocket.cpp.o CMakeFiles/core.dir/src/OusterLidarCallback_c.cpp.o CMakeFiles/core.dir/src/pipeline.cpp.o
+/usr/bin/ranlib libcore.a
