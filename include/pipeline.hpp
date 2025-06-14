@@ -69,7 +69,7 @@ namespace dynamicMap {
             double oriLon_ = 0.0;
             double oriAlt_ = 0.0;
 
-            Map map_;
+            Map map_{10};
 
             VizuDataFrame vizuFrame_;
             Eigen::Vector3d currentLookat_ = {0, 0, 0};

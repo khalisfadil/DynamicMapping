@@ -519,7 +519,7 @@ namespace dynamicMap {
 
         // Map parameters (adjust as needed)
         constexpr double voxel_size = 0.1; // Voxel size in meters
-        constexpr int max_num_points_in_voxel = 10; // Max points per voxel
+        constexpr int max_num_points_in_voxel = 20; // Max points per voxel
         constexpr double min_distance_points = 0.01; // Min distance between points in a voxel
         constexpr int min_num_points = 1; // Min points required in a voxel before adding more
         while (running_.load(std::memory_order_acquire)) {

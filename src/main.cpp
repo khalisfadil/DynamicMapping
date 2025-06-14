@@ -69,7 +69,11 @@ namespace dynamicMap {
                         pipeline.runNavMsgListener(ioContextPoints, udp_dest, udp_port_nav, lidar_packet_size, std::vector<int>{1}); 
                     });
 
-            threads.emplace_back([&]() { pipeline.runVisualizer(std::vector<int>{2}); });
+            threads.emplace_back([&]() { pipeline.runDataAlignment(std::vector<int>{2}); });
+
+            threads.emplace_back([&]() { pipeline.updateOccMap(std::vector<int>{3}); });
+
+            threads.emplace_back([&]() { pipeline.runVisualizer(std::vector<int>{4}); });
 
             while (Pipeline::running_.load(std::memory_order_acquire)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
