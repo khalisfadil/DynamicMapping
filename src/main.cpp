@@ -3,7 +3,7 @@
 using namespace dynamicMap;
 
 int main() {
-        std::string json_path = "/home/khalis/Sync/SensorSOW/Arbeitspakete/MATLAB/Developement/020_DynamicMapping/json/20230802_Warnow_OS2.json";
+        std::string json_path = "/home/target7/Khalis_ws/250612_DymMap/DynamicMapping/json/20230802_Warnow_OS2.json";
         uint32_t lidar_packet_size = 24896;
 
         // Read and parse JSON file to get udp_profile_lidar and udp_port_lidar

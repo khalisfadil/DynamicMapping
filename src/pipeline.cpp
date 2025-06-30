@@ -7,8 +7,8 @@ namespace dynamicMap {
     boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedPoint_buffer_;
     boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> Pipeline::decodedLidarIMU_buffer_;
     boost::lockfree::spsc_queue<std::vector<decodeNav::DataFrameNavMsg>, boost::lockfree::capacity<128>> Pipeline::decodedNav_buffer_;
-    boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128>> Pipeline::interpolatedNav_buffer_;
-    boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128>> Pipeline::vizu_buffer_;
+    boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128*2>> Pipeline::interpolatedNav_buffer_;
+    boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128*2>> Pipeline::vizu_buffer_;
     // -----------------------------------------------------------------------------
 
     Pipeline::Pipeline(const std::string& json_path) : lidarCallback(json_path) {}
@@ -174,6 +174,8 @@ namespace dynamicMap {
                 //    This results in a deep copy into frame_data_copy.
                 lidarCallback.decode_packet_legacy(packet_data, frame_data_copy_);
 
+                //std::cerr << "frame_data_copy_lidar." << frame_data_copy_.timestamp <<std::endl;
+
                 // 3. Now frame_data_copy is an independent, deep copy of the relevant frame.
                 //    We can safely use it and then move it into the queue.
                 if (frame_data_copy_.numberpoints > 0 && frame_data_copy_.frame_id != this->frame_id_) {
@@ -262,6 +264,9 @@ namespace dynamicMap {
                 
                 // Decode the packet into frame_data_IMU_copy
                 navMsgCallback.decode_NavMsg(packet_data, frame_data_Nav_copy);
+
+                // std::lock_guard<std::mutex> lock(consoleMutex);
+                // std::cerr << "frame_data_Nav_copy." << frame_data_Nav_copy.timestamp <<std::endl;
 
                 // Check if the frame is valid
                 if (frame_data_Nav_copy.timestamp > 0 && 
@@ -361,16 +366,22 @@ namespace dynamicMap {
                 }
 
                 // Get min and max lidar timestamps (sorted, so use front and back)
-                double lidar_time = temp_LidarData.timestamp_points.front();
+                double lidar_time = temp_LidarData.timestamp;
                 // double max_lidar_time = temp_LidarData.timestamp_points.back();
 
                 // Loop to find an IMU vector that aligns with the current lidar frame
                 bool aligned = false;
-                while (!aligned){
+                size_t nav_buffer_available = decodedNav_buffer_.read_available();
+
+                while (!aligned && nav_buffer_available > 0){
                     std::vector<decodeNav::DataFrameNavMsg> temp_NavVec;
+
+                    
+                    // std::lock_guard<std::mutex> lock(consoleMutex);
+                    // std::cerr << " Buffer Nav size : " << available << std::endl;
                     if (!decodedNav_buffer_.pop(temp_NavVec)) {
-                        std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedNav_buffer_." << std::endl;
+                        // std::lock_guard<std::mutex> lock(consoleMutex);
+                        // std::cerr << "[Pipeline] DataAlignment: Failed to pop from decodedNav_buffer_." << std::endl;
                         break;
                     }
 
@@ -399,11 +410,11 @@ namespace dynamicMap {
                     if (lidar_time >= min_nav_time && lidar_time <= max_nav_time) {
                         // Timestamps are aligned; process the data
                         aligned = true;
-                        std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cout << "[Pipeline] DataAlignment: Timestamps aligned for frame ID " 
-                                << temp_LidarData.frame_id << ". Lidar range: [" 
-                                << lidar_time << "], NAV range: ["
-                                << min_nav_time << ", " << min_nav_time << "]" << std::endl;
+                        // std::lock_guard<std::mutex> lock(consoleMutex);
+                        // std::cout << "[Pipeline] DataAlignment: Timestamps aligned for frame ID " 
+                        //         << temp_LidarData.frame_id << ". Lidar range: [" 
+                        //         << lidar_time << "], NAV range: ["
+                        //         << min_nav_time << ", " << max_nav_time << "]" << std::endl;
                         // Add processing logic here (e.g., store aligned data, interpolate IMU, pass to lioOdometry)
                         // todo>>
                         
@@ -425,6 +436,12 @@ namespace dynamicMap {
                             }
                         }
 
+                        // std::lock_guard<std::mutex> lock(consoleMutex);
+                        // std::cout << "[Pipeline] DataAlignment: Timestamps aligned for frame ID " 
+                        //         << temp_LidarData.frame_id << ". idx1: [" 
+                        //         << idx1 << "],idx2: ["
+                        //         << idx2 << "]" << std::endl;
+
                         // Get the two closest navigation messages
                         const auto& msg1 = temp_NavVec[idx1];
                         const auto& msg2 = temp_NavVec[idx2];
@@ -436,19 +453,37 @@ namespace dynamicMap {
                         double t2 = later_msg.timestamp;
 
                         // Verify that lidar_time is within the interpolation range
-                        if (lidar_time < t1 || lidar_time > t2) {
+                        // if (lidar_time < t1 || lidar_time > t2) {
+                        //     std::lock_guard<std::mutex> lock(consoleMutex);
+                        //     std::cerr << "[Pipeline] DataAlignment: Lidar time " << lidar_time
+                        //             << " outside NAV range [" << t1 << ", " << t2 << "] for frame ID "
+                        //             << temp_LidarData.frame_id << "." << std::endl;
+                        //     continue;
+                        // }
+
+                        // Handle interpolation or select exact match
+                        if (lidar_time == t1) {
+                            interpolatedNavMsg = earlier_msg; // Use earlier message directly
+                            interpolatedNavMsg.timestamp = lidar_time; // Ensure timestamp matches
+                            
                             std::lock_guard<std::mutex> lock(consoleMutex);
                             std::cerr << "[Pipeline] DataAlignment: Lidar time " << lidar_time
-                                    << " outside NAV range [" << t1 << ", " << t2 << "] for frame ID "
+                                    << " equalt to t1 [" << t1 << "] for frame ID "
                                     << temp_LidarData.frame_id << "." << std::endl;
-                            continue;
-                        }
+                            
+                        } else if (lidar_time == t2) {
+                            interpolatedNavMsg = later_msg; // Use later message directly
+                            interpolatedNavMsg.timestamp = lidar_time; // Ensure timestamp matches
 
-                        // Handle case where timestamps are equal
-                        if (t1 == t2) {
-                            interpolatedNavMsg = earlier_msg; // Use either message
+                            std::lock_guard<std::mutex> lock(consoleMutex);
+                            std::cerr << "[Pipeline] DataAlignment: Lidar time " << lidar_time
+                                    << " equalt to t2 [" << t2 << "] for frame ID "
+                                    << temp_LidarData.frame_id << "." << std::endl;
+
+                        } else if (t1 == t2) {
+                            interpolatedNavMsg = earlier_msg; // Use either message if timestamps are equal
                             interpolatedNavMsg.timestamp = lidar_time; // Set to desired timestamp
-                        } else {
+                        } else if (lidar_time<t2 && lidar_time>t1){
                             // Compute interpolation factor
                             double alpha = (lidar_time - t1) / (t2 - t1);
 
@@ -475,16 +510,30 @@ namespace dynamicMap {
                             interpolatedNavMsg.velN = earlier_msg.velN + alpha * (later_msg.velN - earlier_msg.velN);
                             interpolatedNavMsg.velE = earlier_msg.velE + alpha * (later_msg.velE - earlier_msg.velE);
                             interpolatedNavMsg.velD = earlier_msg.velD + alpha * (later_msg.velD - earlier_msg.velD);
+
+                            // std::lock_guard<std::mutex> lock(consoleMutex);
+                            // std::cerr << "[Pipeline] DataAlignment: Lidar time " << lidar_time
+                            //         << " inside NAV range [" << t1 << ", " << t2 << "] for frame ID "
+                            //         << temp_LidarData.frame_id << "." << std::endl;
                         }
-                        if(first_pose && std::isfinite(interpolatedNavMsg.latitude) && std::isfinite(interpolatedNavMsg.longitude) && std::isfinite(interpolatedNavMsg.altitude) 
-                        && interpolatedNavMsg.latitude > 0.0, interpolatedNavMsg.longitude > 0.0, interpolatedNavMsg.altitude > 0.0){
+
+                        // std::cerr << "[Pipeline] first point : " << first_pose <<std::endl;
+                        if(first_pose && interpolatedNavMsg.latitude > 0.0 && interpolatedNavMsg.longitude > 0.0 && interpolatedNavMsg.altitude > 0.0){
                             first_pose = false;
                             oriLat_ = interpolatedNavMsg.latitude;
                             oriLon_ = interpolatedNavMsg.longitude;
                             oriAlt_ = static_cast<double>(interpolatedNavMsg.altitude);
-                        } else {continue;}
+
+                            // std::lock_guard<std::mutex> lock(consoleMutex);
+                            // std::cerr << "[Pipeline] first point latlonalt: " << oriLat_ << ", " << oriLon_ << ", " << oriAlt_ << ", " <<std::endl;
+                        } 
+                        // std::cerr << "[Pipeline] first point : " << first_pose <<std::endl;
 
                         NavDataFrame interpolatedData(temp_LidarData, interpolatedNavMsg,oriLat_,oriLon_,oriAlt_);
+                        // std::cerr << "[Pipeline] generate NavDataFrame success NED: "<< interpolatedData.N << ", " << interpolatedData.E << ", " << interpolatedData.D << ", " 
+                        //  << " ori latlonalt: "<< interpolatedData.oriLat << ", " << interpolatedData.oriLon << ", " << interpolatedData.oriAlt << ", " 
+                        //  << " calculated latlonalt: "<< interpolatedData.nav_data.latitude << ", " << interpolatedData.nav_data.longitude << ", " << interpolatedData.nav_data.altitude << ", " << std::endl;
+                        // std::cerr << "[interpolatedData] T " << interpolatedData.T << std::endl;
 
                         // Push the copy into the SPSC queue
                         if (!interpolatedNav_buffer_.push(interpolatedData)) {
@@ -492,16 +541,18 @@ namespace dynamicMap {
                             std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer interpolatedData might be full." << std::endl;
                         }
 
-                    } else if (lidar_time > max_nav_time){
-                        // Lidar is too new or partially overlaps; pop another newer IMU vector >> skip while
-                        continue;
-                    } else {
-                        // Lidar impossible to catch up with the IMU timestamp, need to discard this Lidar frame.
-                        // Potential Solution, increase the size buffer frame.
-                        std::lock_guard<std::mutex> lock(consoleMutex);
-                        std::cerr << "[Pipeline] DataAlignment: Lidar cannot catch up with Nav data, please increase Buffer size" << std::endl;
-                        break;
-                    }
+                    } 
+                    
+                    // else if (lidar_time > max_nav_time){
+                    //     // Lidar is too new or partially overlaps; pop another newer IMU vector >> skip while
+                    //     continue;
+                    // } else {
+                    //     // Lidar impossible to catch up with the IMU timestamp, need to discard this Lidar frame.
+                    //     // Potential Solution, increase the size buffer frame.
+                    //     std::lock_guard<std::mutex> lock(consoleMutex);
+                    //     std::cerr << "[Pipeline] DataAlignment: Lidar cannot catch up with Nav data, please increase Buffer size" << std::endl;
+                    //     break;
+                    // }
                 }
             } catch (const std::exception& e) {
                 std::lock_guard<std::mutex> lock(consoleMutex);
@@ -518,7 +569,7 @@ namespace dynamicMap {
         setThreadAffinity(allowedCores);
 
         // Map parameters (adjust as needed)
-        constexpr double voxel_size = 0.1; // Voxel size in meters
+        constexpr double voxel_size = 0.5; // Voxel size in meters
         constexpr int max_num_points_in_voxel = 20; // Max points per voxel
         constexpr double min_distance_points = 0.01; // Min distance between points in a voxel
         constexpr int min_num_points = 1; // Min points required in a voxel before adding more
@@ -536,6 +587,8 @@ namespace dynamicMap {
                     continue;
                 }
 
+                // std::cerr << "[temp_NavData] T " << temp_NavData.T << std::endl;
+
                 // Get point cloud as std::vector<lidarDecode::Point3D>
                 std::vector<lidarDecode::Points3D> point_cloud = temp_NavData.lidar_data.toPoints3D();
 
@@ -552,10 +605,10 @@ namespace dynamicMap {
                 map_.add(point_cloud, voxel_size, max_num_points_in_voxel, min_distance_points, min_num_points);
                 
                 // raycast points to the map
-                map_.raycast(local_pose, point_cloud, voxel_size);
+                // map_.raycast(local_pose, point_cloud, voxel_size);
 
                 //remove isolated voxel
-                map_.removeIsolatedVoxels();
+                // map_.removeIsolatedVoxels();
 
                 // Update voxel lifetimes
                 map_.update_and_filter_lifetimes();
@@ -565,18 +618,20 @@ namespace dynamicMap {
 
                 vizuFrame_.pointcloud = currmapArray;
                 vizuFrame_.T = currT;
+                // std::lock_guard<std::mutex> lock(consoleMutex);
+                // std::cerr << "[Pipeline]vizuFrame_.T " << vizuFrame_.T << std::endl;
                 
                 // Push the copy into the SPSC queue
                 if (!vizu_buffer_.push(vizuFrame_)) {
                     std::lock_guard<std::mutex> lock(consoleMutex);
-                    std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Nav might be full." << std::endl;
+                    std::cerr << "[Pipeline] Listener: SPSC buffer push failed for frame. Buffer Vizu might be full." << std::endl;
                 }
 
                 // Log success
-                std::lock_guard<std::mutex> lock(consoleMutex);
-                std::cout << "[Pipeline] updateOccMap: Added " << point_cloud.size()
-                        << " points to map for frame ID " << temp_NavData.lidar_data.frame_id
-                        << ". Total map size: " << map_.size() << " points." << std::endl;
+                // std::lock_guard<std::mutex> lock(consoleMutex);
+                // std::cout << "[Pipeline] updateOccMap: Added " << point_cloud.size()
+                //         << " points to map for frame ID " << temp_NavData.lidar_data.frame_id
+                //         << ". Total map size: " << map_.size() << " points." << std::endl;
             
             } catch (const std::exception& e) {
                 std::lock_guard<std::mutex> lock(consoleMutex);
@@ -593,7 +648,7 @@ namespace dynamicMap {
         setThreadAffinity(allowedCores);
 
         try {
-            if (!vis.CreateVisualizerWindow("3D Point Cloud Visualization", 2560, 1440, 50, 50, true)) { // Added visible=true
+            if (!vis.CreateVisualizerWindow("3D Point Cloud Visualization", 1280, 720)) { // Added visible=true
                 { // Scope for lock
                     std::lock_guard<std::mutex> lock(consoleMutex);
                     std::cerr << "[Pipeline] Visualizer: Failed to create window." << std::endl;
@@ -602,7 +657,7 @@ namespace dynamicMap {
             }
             // Access render option after window creation
             vis.GetRenderOption().background_color_ = Eigen::Vector3d(1, 1, 1); // Dark grey background
-            vis.GetRenderOption().point_size_ = 1.0; // Slightly larger points
+            vis.GetRenderOption().point_size_ = 5.0; // Slightly larger points
 
             // Setup camera
             auto& view_control = vis.GetViewControl();
@@ -628,14 +683,19 @@ namespace dynamicMap {
 
 
             // Add a coordinate frame for reference
-            auto coord_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(5.0); // Size 1.0 meter
-            vis.AddGeometry(coord_frame);
+            // auto coord_frame = open3d::geometry::TriangleMesh::CreateCoordinateFrame(5.0); // Size 1.0 meter
+            // vis.AddGeometry(coord_frame);
 
             // Register the animation callback
             // The lambda captures 'this' to call the member function updateVisualizer.
             vis.RegisterAnimationCallback([this](open3d::visualization::Visualizer* callback_vis_ptr) {
                 // 'this->' is optional for member function calls but can improve clarity
-                return this->updateVisualizer(callback_vis_ptr);
+                // return this->updateVisualizer(callback_vis_ptr);
+                try {
+                    return this->updateVisualizer(callback_vis_ptr);
+                } catch (const std::exception& e) {
+                    return running_.load(std::memory_order_acquire);
+                }
             });
             
             { // Scope for lock
@@ -673,17 +733,23 @@ namespace dynamicMap {
         // you'd need a static `last_render_timepoint`.
         auto call_start_time = std::chrono::steady_clock::now();
 
-        VizuDataFrame frame_to_display;
+        // VizuDataFrame frame_to_display;
         bool new_frame_available = false;
         auto& view_control = vis_ptr->GetViewControl();
 
         // Consume all frames currently in the buffer, but only process the latest one for display.
         // This helps the visualizer "catch up" if the producer is faster.
+        // VizuDataFrame temp_frame;
+        // while (vizu_buffer_.pop(temp_frame)) {
+        //     frame_to_display = std::move(temp_frame); // Keep moving the latest popped frame
+        //     new_frame_available = true;
+        // }
+
         VizuDataFrame temp_frame;
-        while (vizu_buffer_.pop(temp_frame)) {
-            frame_to_display = std::move(temp_frame); // Keep moving the latest popped frame
-            new_frame_available = true;
-        }
+        if (!vizu_buffer_.pop(temp_frame)) {
+            std::lock_guard<std::mutex> lock(consoleMutex);
+            std::cerr << "[Pipeline] updateOccMap: Failed to pop from vizu_buffer_." << std::endl;
+        } else {new_frame_available = true;}
 
         bool geometry_needs_update = false;
         if (new_frame_available) {
@@ -691,7 +757,7 @@ namespace dynamicMap {
             // The condition `frame_to_display.numberpoints > 0` is implicitly handled
             // by updatePtCloudStream, which will clear the cloud if numberpoints is 0.
             // std::cerr << "numpoint in decoded: " << frame_to_display.numberpoints << std::endl; //both show same value
-            updateStream(point_cloud_ptr_, vehiclemesh_ptr_, frame_to_display);
+            updateStream(point_cloud_ptr_, vehiclemesh_ptr_, temp_frame);
             geometry_needs_update = true; // Assume geometry changed if we processed a new frame
         }
 
@@ -699,7 +765,7 @@ namespace dynamicMap {
             vis_ptr->UpdateGeometry(point_cloud_ptr_); // Tell Open3D to refresh this geometry
             if(vis_ptr->UpdateGeometry(vehiclemesh_ptr_)){
                 Eigen::Vector3d targetLookat;
-                targetLookat << frame_to_display.T(0,3),frame_to_display.T(1,3),frame_to_display.T(2,3);
+                targetLookat << temp_frame.T(0,3),temp_frame.T(1,3),temp_frame.T(2,3);
                 currentLookat_ = currentLookat_ + smoothingFactor * (targetLookat - currentLookat_);
             }
             view_control.SetLookat(currentLookat_);
@@ -762,6 +828,8 @@ namespace dynamicMap {
         // Update vehicle mesh if pointer is valid
         if (vehiclemesh_ptr) {
             vehiclemesh_ptr = createVehicleMesh(frame.T);
+            // std::lock_guard<std::mutex> lock(consoleMutex);
+            // std::cerr << "[Pipeline]frame.T " << frame.T << std::endl;
         }
     }
 
@@ -782,25 +850,30 @@ namespace dynamicMap {
             {-10.0, 5.0, 0.0}    // Rear right
         };
 
-        // Define NED-to-visualization transformation matrix
-        Eigen::Matrix4d ned_to_viz = Eigen::Matrix4d::Identity();
-        ned_to_viz(1,1) = -1.0; // y_viz = -y_NED
-        ned_to_viz(2,2) = -1.0; // z_viz = -z_NED
-
-        // Combine transformations: first apply T (NED), then NED-to-viz
-        Eigen::Matrix4d combined_T = ned_to_viz * T;
-
-        // Transform vertices to world coordinates using homogeneous coordinates
-        std::vector<Eigen::Vector3d> world_vertices;
-        world_vertices.reserve(local_vertices.size());
-        for (const auto& local_vertex : local_vertices) {
-            // Convert to homogeneous coordinates [x, y, z, 1]
-            Eigen::Vector4d homogeneous_vertex(local_vertex.x(), local_vertex.y(), local_vertex.z(), 1.0);
-            // Apply combined transformation
-            Eigen::Vector4d transformed = combined_T * homogeneous_vertex;
-            // Extract 3D coordinates
-            world_vertices.emplace_back(transformed.head<3>());
+        std::vector<Eigen::Vector3d> world_vertices(local_vertices.size());
+        for (size_t i = 0; i < local_vertices.size(); ++i) {
+            world_vertices[i] = T.block<3,3>(0,0) * local_vertices[i] + T.block<3,1>(0,3);
         }
+
+        // // Define NED-to-visualization transformation matrix
+        // Eigen::Matrix4d ned_to_viz = Eigen::Matrix4d::Identity();
+        // ned_to_viz(1,1) = -1.0; // y_viz = -y_NED
+        // ned_to_viz(2,2) = -1.0; // z_viz = -z_NED
+
+        // // Combine transformations: first apply T (NED), then NED-to-viz
+        // Eigen::Matrix4d combined_T = ned_to_viz * T;
+
+        // // Transform vertices to world coordinates using homogeneous coordinates
+        // std::vector<Eigen::Vector3d> world_vertices;
+        // world_vertices.reserve(local_vertices.size());
+        // for (const auto& local_vertex : local_vertices) {
+        //     // Convert to homogeneous coordinates [x, y, z, 1]
+        //     Eigen::Vector4d homogeneous_vertex(local_vertex.x(), local_vertex.y(), local_vertex.z(), 1.0);
+        //     // Apply combined transformation
+        //     Eigen::Vector4d transformed = combined_T * homogeneous_vertex;
+        //     // Extract 3D coordinates
+        //     world_vertices.emplace_back(transformed.head<3>());
+        // }
 
         // Assign vertices to mesh
         vehicle_mesh->vertices_ = world_vertices;
@@ -809,10 +882,10 @@ namespace dynamicMap {
         vehicle_mesh->triangles_.push_back(Eigen::Vector3i(0, 1, 2));
 
         // Compute triangle normal in visualization coordinates
-        Eigen::Vector3d v0 = world_vertices[1] - world_vertices[0];
-        Eigen::Vector3d v1 = world_vertices[2] - world_vertices[0];
-        Eigen::Vector3d normal = v0.cross(v1).normalized();
-        vehicle_mesh->triangle_normals_.push_back(normal);
+        // Eigen::Vector3d v0 = world_vertices[1] - world_vertices[0];
+        // Eigen::Vector3d v1 = world_vertices[2] - world_vertices[0];
+        // Eigen::Vector3d normal = v0.cross(v1).normalized();
+        // vehicle_mesh->triangle_normals_.push_back(normal);
 
         // Assign green color to all vertices
         vehicle_mesh->vertex_colors_.reserve(local_vertices.size());

@@ -664,7 +664,7 @@ namespace dynamicMap {
 
                         this->number_points_++;
                         if (is_first_point_of_current_frame) {
-                            p_current_write_buffer->timestamp = current_col_timestamp_s;
+                            p_current_write_buffer->timestamp = current_col_timestamp_s + (-1690934400);
                             p_current_write_buffer->frame_id = this->frame_id_;
                             p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                                 ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;
@@ -719,7 +719,7 @@ namespace dynamicMap {
 
                 this->number_points_++;
                 if (is_first_point_of_current_frame) {
-                    p_current_write_buffer->timestamp = current_col_timestamp_s;
+                    p_current_write_buffer->timestamp = current_col_timestamp_s +(-1690934400);
                     p_current_write_buffer->frame_id = this->frame_id_;
                     p_current_write_buffer->interframe_timedelta = (prev_frame_completed_latest_ts > 0.0)
                         ? std::max(0.0, current_col_timestamp_s - prev_frame_completed_latest_ts) : 0.0;

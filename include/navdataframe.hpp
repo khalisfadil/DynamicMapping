@@ -31,16 +31,24 @@ namespace dynamicMap {
             Eigen::Vector3d NED = nav_math.LLA2NED(nav_data.latitude, nav_data.longitude, 
                                                   static_cast<double>(nav_data.altitude), 
                                                   oriLat, oriLon, oriAlt);
-            N = NED(0); // North
-            E = NED(1); // East
-            D = NED(2); // Down
+            // N = NED(0); // North
+            // E = NED(1); // East
+            // D = NED(2); // Down
 
-            Eigen::Vector4d q = nav_math.getQuat(nav_data.roll, nav_data.pitch, nav_data.yaw);
+            // Eigen::Vector4d q = nav_math.getQuat(nav_data.roll, nav_data.pitch, nav_data.yaw);
 
-            Eigen::VectorXd u;
-            u << N,E,D,q(0),q(1),q(2),q(3);
+            // Eigen::VectorXd u(7); // Resize to 7 elements
+            // u << N,E,D,q(0),q(1),q(2),q(3);
 
-            T = nav_math.TransformMatrix(u);
+            Eigen::AngleAxisd rollAngle(nav.roll, Eigen::Vector3d::UnitX());
+            Eigen::AngleAxisd pitchAngle(nav.pitch, Eigen::Vector3d::UnitY());
+            Eigen::AngleAxisd yawAngle(nav.yaw, Eigen::Vector3d::UnitZ());
+            Eigen::Matrix3d R = Eigen::Matrix3d(yawAngle * pitchAngle * rollAngle);
+            T.block<3,3>(0,0) = R;
+            T.block<3,1>(0,3) = NED;
+            // std::cerr << "[NavDataFrame] T " << T << std::endl;
+
+            // T = nav_math.TransformMatrix(u);
             
             transformLidarData();
         }

@@ -29,8 +29,8 @@ namespace dynamicMap {
             static boost::lockfree::spsc_queue<lidarDecode::LidarDataFrame, boost::lockfree::capacity<128>> decodedPoint_buffer_;
             static boost::lockfree::spsc_queue<lidarDecode::LidarIMUDataFrame, boost::lockfree::capacity<128>> decodedLidarIMU_buffer_;
             static boost::lockfree::spsc_queue<std::vector<decodeNav::DataFrameNavMsg>, boost::lockfree::capacity<128>> decodedNav_buffer_;
-            static boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128>> interpolatedNav_buffer_;
-            static boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128>> vizu_buffer_;
+            static boost::lockfree::spsc_queue<dynamicMap::NavDataFrame, boost::lockfree::capacity<128*2>> interpolatedNav_buffer_;
+            static boost::lockfree::spsc_queue<VizuDataFrame, boost::lockfree::capacity<128*2>> vizu_buffer_;
 
             Pipeline(const std::string& json_path); // Constructor with JSON file path
             // Pipeline(const nlohmann::json& json_data); // Constructor with JSON data
@@ -72,7 +72,7 @@ namespace dynamicMap {
 
             VizuDataFrame vizuFrame_;
             Eigen::Vector3d currentLookat_ = {0, 0, 0};
-            std::chrono::milliseconds targetFrameDuration{30};
+            std::chrono::milliseconds targetFrameDuration{32};
 
             std::shared_ptr<open3d::geometry::PointCloud> point_cloud_ptr_;
             std::shared_ptr<open3d::geometry::TriangleMesh> vehiclemesh_ptr_;
